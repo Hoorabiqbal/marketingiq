@@ -1,0 +1,13 @@
+﻿backend/.env
+.env
+backend/venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+Thumbs.db
+.vscode/
+*.code-workspace
+backend/index.test.html
+backend/node_modules/
