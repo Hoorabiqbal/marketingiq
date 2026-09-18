@@ -34,13 +34,9 @@ MarketingIQ helps a marketing team answer the questions that actually drive budg
 
 ## Screenshots
 
-<img width="1828" height="945" alt="Overview" src="https://github.com/user-attachments/assets/e910051b-b55b-4de1-8f55-6988e799ba83" />
-<img width="1830" height="954" alt="Champains" src="https://github.com/user-attachments/assets/a2c5295e-4229-4435-8e79-ed96b7438f68" />
-<img width="1833" height="952" alt="Channels" src="https://github.com/user-attachments/assets/76ab75e0-2dfd-45c6-b038-19c224417825" />
-<img width="1828" height="948" alt="Audience" src="https://github.com/user-attachments/assets/228396f6-6d08-4d5b-8e0d-a1d564b4b0da" />
-<img width="1829" height="949" alt="Audience" src="https://github.com/user-attachments/assets/27e2df74-bc4e-429a-a4c3-8b8863473711" />
-<img width="1828" height="951" alt="Creative" src="https://github.com/user-attachments/assets/46b4bdca-ff35-424a-b139-24d132116af2" />
-<img width="1828" height="951" alt="AI Analyst" src="https://github.com/user-attachments/assets/3f3270c0-d15c-4193-a079-70759ca83555" />
+<img width="1830" height="954" alt="Overview"<img width="1828" height="945" alt="Campaign" src="https://github.com/user-attachments/assets/cc097b84-9154-418b-955e-bcef3e0c09e4" />
+" src="https://github.com/user-attachments/assets/60ea8784-912f-4802-99cd-ab09ff07aaaa" />
+
 
 
 ## Features
