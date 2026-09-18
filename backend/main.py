@@ -30,11 +30,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
-from google import genai
 from google.genai import types
-from google.genai import errors as genai_errors
 
 import data_tools as dt
+from gemini_rotator import GeminiKeyRotator, load_keys
 
 APP_DIR = Path(__file__).parent
 load_dotenv(APP_DIR / ".env")
@@ -53,8 +52,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+rotator = GeminiKeyRotator(load_keys())
 MODEL = "gemini-3.6-flash"  # free-tier model; update here if Google renames/replaces it again
 
 SYSTEM_PROMPT = """You are the MarketingIQ AI Analyst, a data-grounded marketing analytics assistant.
@@ -236,10 +234,33 @@ def run_tool(name: str, tool_input: dict, filters: dict):
         return {"error": str(e)}
 
 
+def _message_for_error(err: str) -> str:
+    if err in (None,):
+        return ""
+    if err == "no_key":
+        return ("No Gemini API key configured. Set GEMINI_API_KEY_1 (and optionally _2, _3, ...) "
+                "or GEMINI_API_KEY in backend/.env (or your host's environment variables). "
+                "Get a free key at https://aistudio.google.com/apikey, then restart/redeploy.")
+    if err.startswith("auth:"):
+        return ("The AI Analyst can't authenticate with Gemini — one of your configured "
+                "GEMINI_API_KEY_* values is missing or invalid. This is a configuration issue, "
+                "not a quota issue, so it won't resolve by retrying. Check backend/.env "
+                "(or your host's environment variables) and restart/redeploy.")
+    if err.startswith("quota_exhausted:"):
+        return ("All configured Gemini API keys have hit their free-tier quota right now. "
+                "Wait a bit and try again, or add another GEMINI_API_KEY_N as a fallback "
+                f"(currently configured: {len(rotator.clients)} key(s)).")
+    if err.startswith("server:"):
+        return f"Gemini's servers are temporarily overloaded after a few retries — please try again in a moment. ({err[len('server:'):]})"
+    if err.startswith("client:"):
+        return f"The AI Analyst hit a request error: {err[len('client:'):]}"
+    return f"The AI Analyst hit an unexpected error: {err}"
+
+
 @app.post("/api/chat")
 def chat(req: ChatRequest):
-    if client is None:
-        return {"answer": "No GEMINI_API_KEY found in backend/.env. Get a free key (no credit card) at https://aistudio.google.com/apikey, add it to .env, then restart the server."}
+    if not rotator.configured:
+        return {"answer": _message_for_error("no_key")}
 
     filters = req.filters or {}
     contents = [
@@ -252,31 +273,19 @@ def chat(req: ChatRequest):
     # Agentic loop: keep calling Gemini, executing any tool calls it makes,
     # until it returns a final plain-text answer (or we hit a safety cap).
     for _ in range(6):
-        try:
-            response = None
-            last_server_error = None
-            for attempt in range(3):
-                try:
-                    response = client.models.generate_content(model=MODEL, contents=contents, config=config)
-                    break
-                except genai_errors.ServerError as e:
-                    last_server_error = e
-                    if attempt < 2:
-                        time.sleep(1.5 * (attempt + 1))  # brief backoff: 1.5s, then 3s
-                    continue
-            if response is None:
-                return {"answer": f"Gemini's servers are temporarily overloaded after a few retries — please try again in a moment. ({last_server_error})"}
-        except genai_errors.ClientError as e:
-            msg = str(e).lower()
-            if "api key" in msg or e.code in (401, 403):
-                return {"answer": "The AI Analyst can't authenticate with Gemini — the GEMINI_API_KEY in backend/.env is missing or invalid. Get a free key at https://aistudio.google.com/apikey, add it to .env, then restart the server."}
-            if "quota" in msg or "rate" in msg or e.code == 429:
-                return {"answer": "Gemini's free-tier rate limit was hit — wait a moment and try again (the free tier allows about 1,500 requests/day)."}
-            return {"answer": f"The AI Analyst hit a request error: {e}"}
-        except genai_errors.ServerError as e:
-            return {"answer": f"Gemini's servers had an issue — try again in a moment. ({e})"}
-        except Exception as e:
-            return {"answer": f"The AI Analyst hit an unexpected error: {e}"}
+        response = None
+        err = None
+        # Server-error retries (transient infra overload) stay on whichever key the
+        # rotator is currently using — that's a Gemini-wide issue, not a per-key one.
+        for attempt in range(3):
+            response, err = rotator.call(MODEL, contents, config)
+            if response is not None or not (err and err.startswith("server:")):
+                break
+            if attempt < 2:
+                time.sleep(1.5 * (attempt + 1))  # brief backoff: 1.5s, then 3s
+
+        if response is None:
+            return {"answer": _message_for_error(err)}
 
         candidate = response.candidates[0]
         parts = candidate.content.parts or []
@@ -298,4 +307,9 @@ def chat(req: ChatRequest):
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "campaigns_loaded": len(dt.get_dataframe()), "gemini_key_configured": client is not None}
+    return {
+        "status": "ok",
+        "campaigns_loaded": len(dt.get_dataframe()),
+        "gemini_key_configured": rotator.configured,
+        "gemini_keys_configured": len(rotator.clients),
+    }

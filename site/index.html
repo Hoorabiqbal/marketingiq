@@ -103,6 +103,14 @@
   .chart-point:hover, .chart-hit:hover { opacity:1 !important; transform:scale(1.1); filter:drop-shadow(0 0 4px rgba(91,110,245,.35)); }
   .rank-row { cursor:default; transition:background .14s ease, transform .14s ease; border-radius:4px; padding-left:3px; padding-right:3px; }
   .rank-row:hover { background:rgba(91,110,245,.055); transform:translateX(2px); }
+  .rank-row[onclick]:hover { background:rgba(91,110,245,.14); }
+  .rank-row-active { background:rgba(91,110,245,.20) !important; box-shadow: inset 0 0 0 1px var(--accent); }
+  .chart-filter-chips { display:none; align-items:center; gap:6px; flex-wrap:wrap; margin-top:8px; }
+  .filter-chip { display:inline-flex; align-items:center; gap:6px; background:var(--accent-dim,rgba(91,110,245,.15)); color:var(--accent); border:1px solid rgba(91,110,245,.35); border-radius:14px; padding:4px 6px 4px 10px; font-size:11px; font-weight:600; }
+  .filter-chip .chip-x { cursor:pointer; display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px; border-radius:50%; background:rgba(91,110,245,.18); font-size:12px; line-height:1; }
+  .filter-chip .chip-x:hover { background:rgba(91,110,245,.35); }
+  .chip-clear-all { font-size:10.5px; color:var(--text-muted); text-decoration:underline; cursor:pointer; }
+  .chip-clear-all:hover { color:var(--text-primary); }
   .rank-bar-fill { transition:width .35s ease; }
   .contrib-row { transition:transform .14s ease, background .14s ease; border-radius:4px; padding-left:3px; padding-right:3px; }
   .contrib-row:hover { transform:translateX(2px); background:rgba(91,110,245,.04); }
@@ -458,6 +466,7 @@
     <span class="filter-note" id="filter-note" hidden>Showing: all campaigns (no filters active)</span>
     <button type="button" class="clear" onclick="resetFilters()"><span class="reset-icon">↻</span> Reset All Filters</button>
   </div>
+  <div class="chart-filter-chips" id="chart-filter-chips" aria-label="Chart-selected filters"></div>
 
   <!-- ================= PAGE: OVERVIEW ================= -->
   <div class="page active" id="page-overview">
@@ -767,8 +776,42 @@ const filterState = {
   objective: 'All Objectives',
   vertical: 'All Industry Verticals',
   budget: 'All Budget Tiers',
-  retargeting: 'Retargeting & Cold Combined'
+  retargeting: 'Retargeting & Cold Combined',
+  // Chart-driven filters (set by clicking a bar/row in a chart, not the sidebar).
+  // null = no selection for that dimension. Field names match the real campaign
+  // record keys in data.js (c.gender, c.device, c.age, c.creative, c.emotion, c.placement, c.income).
+  gender: null, device: null, age: null, creative: null, emotion: null, placement: null, income: null
 };
+const CHART_FILTER_FIELDS = ['gender','device','age','creative','emotion','placement','income'];
+const CHART_FILTER_LABELS = {gender:'Gender', device:'Device', age:'Age', creative:'Creative format', emotion:'Emotion', placement:'Placement', income:'Income'};
+
+/* Click a chart bar/row to set (or toggle off, if clicking the same value again) a
+   cross-filter. This is additive with the sidebar filters and with any other chart
+   filter already active — campaignMatches() ANDs all of them together. */
+function setChartFilter(field, value){
+  filterState[field] = (filterState[field] === value) ? null : value;
+  renderFilterChips();
+  renderAll();
+}
+function clearChartFilter(field){
+  filterState[field] = null;
+  renderFilterChips();
+  renderAll();
+}
+function clearAllChartFilters(){
+  CHART_FILTER_FIELDS.forEach(f => filterState[f] = null);
+  renderFilterChips();
+  renderAll();
+}
+function renderFilterChips(){
+  const el = document.getElementById('chart-filter-chips');
+  if (!el) return;
+  const active = CHART_FILTER_FIELDS.filter(f => filterState[f]);
+  if (!active.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = 'flex';
+  el.innerHTML = active.map(f => `<span class="filter-chip">${CHART_FILTER_LABELS[f]}: ${filterState[f]} <span class="chip-x" onclick="clearChartFilter('${f}')" title="Remove this filter">&times;</span></span>`).join('')
+    + `<span class="chip-clear-all" onclick="clearAllChartFilters()">Clear chart selections</span>`;
+}
 
 const tooltip = document.createElement('div');
 tooltip.className = 'tooltip';
@@ -808,8 +851,10 @@ function bindTooltips(root=document){
 
 /* ============ FILTER HELPERS ============ */
 function activeFilterLabels(){
-  return [filterState.platform, filterState.objective, filterState.vertical, filterState.budget, filterState.retargeting]
+  const sidebar = [filterState.platform, filterState.objective, filterState.vertical, filterState.budget, filterState.retargeting]
     .filter(v => !v.startsWith('All') && v !== 'Retargeting & Cold Combined');
+  const chart = CHART_FILTER_FIELDS.filter(f => filterState[f]).map(f => `${CHART_FILTER_LABELS[f]}: ${filterState[f]}`);
+  return [...sidebar, ...chart];
 }
 function campaignMatches(c){
   if (filterState.platform !== 'All Platforms' && c.platform !== filterState.platform) return false;
@@ -818,6 +863,9 @@ function campaignMatches(c){
   if (filterState.budget !== 'All Budget Tiers' && c.budget !== filterState.budget) return false;
   if (filterState.retargeting === 'Retargeting Only' && !c.retargeting) return false;
   if (filterState.retargeting === 'Cold Audience Only' && c.retargeting) return false;
+  for (const f of CHART_FILTER_FIELDS) {
+    if (filterState[f] && c[f] !== filterState[f]) return false;
+  }
   return true;
 }
 function filteredCampaigns(){
@@ -876,6 +924,8 @@ function resetFilters(){
   filterState.vertical = 'All Industry Verticals';
   filterState.budget = 'All Budget Tiers';
   filterState.retargeting = 'Retargeting & Cold Combined';
+  CHART_FILTER_FIELDS.forEach(f => filterState[f] = null);
+  renderFilterChips();
   updateFilterSummary();
   renderAll();
 }
@@ -917,7 +967,7 @@ function displayLabel(name){
   return /tiktok|linkedin|facebook|instagram|twitter|google/.test(n) ? platformChip(name) : name;
 }
 
-function renderRankList(elId, data, key, colorFn, valFn){
+function renderRankList(elId, data, key, colorFn, valFn, filterField){
   const el = document.getElementById(elId);
   if (!el) return;
   if (!data.length) { el.innerHTML='<li class="mini-row" style="color:var(--text-muted);">No data for current filters.</li>'; return; }
@@ -930,7 +980,10 @@ function renderRankList(elId, data, key, colorFn, valFn){
     if (typeof d.profit === 'number') ttRows.push(['Profit', fmt$(d.profit)]);
     if (typeof d.clicks === 'number') ttRows.push(['Clicks', Math.round(d.clicks).toLocaleString()]);
     const extra = ttRows.map(([k,v])=>`<div class="tt-row"><span>${k}</span><span class="tt-value">${v}</span></div>`).join('');
-    return `<li class="rank-row" data-tooltip-title="${String(d.name).replace(/"/g,'&quot;')}" data-tooltip-body="${extra.replace(/"/g,'&quot;')}">
+    const safeName = String(d.name).replace(/'/g, "\\'").replace(/"/g,'&quot;');
+    const isActive = filterField && filterState[filterField] === d.name;
+    const clickAttr = filterField ? ` onclick="handleRankClick('${filterField}','${safeName}')" role="button" tabindex="0" title="Click to filter the dashboard by this ${CHART_FILTER_LABELS[filterField] || filterField}"` : '';
+    return `<li class="rank-row${isActive ? ' rank-row-active' : ''}"${clickAttr} data-tooltip-title="${String(d.name).replace(/"/g,'&quot;')}" data-tooltip-body="${extra.replace(/"/g,'&quot;')}">
       <span class="rank-name">${displayLabel(d.name)}</span>
       <div class="rank-bar-track"><div class="rank-bar-fill" style="width:${width.toFixed(0)}%;background:${colorFn(d)}"></div></div>
       <span class="rank-val num">${valFn(d)}</span>
@@ -978,12 +1031,29 @@ function renderOverviewKpis(rows){
   document.getElementById('ov-kpi-roi-sub').textContent='Revenue less spend';
 }
 
+function setPlatformFilter(name){
+  const sel = document.getElementById('f-platform');
+  if (filterState.platform === name) {
+    filterState.platform = 'All Platforms';
+    if (sel) sel.value = 'All Platforms';
+  } else {
+    filterState.platform = name;
+    if (sel) sel.value = name;
+  }
+  updateFilterSummary();
+  renderAll();
+}
+function handleRankClick(field, name){
+  if (field === 'platform') { setPlatformFilter(name); }
+  else { setChartFilter(field, name); }
+}
+
 function renderOverview(){
   const rows=platformRows();
   renderOverviewKpis(rows);
   renderRankList('overview-roas-list', rows.sort((a,b)=>b.roas-a.roas), 'roas',
     d=> d.roas>8?'#34D399':(d.roas>4?'#5B6EF5':'#E0A93E'),
-    d=>d.roas.toFixed(2)+'x');
+    d=>d.roas.toFixed(2)+'x', 'platform');
 
   const totalSpend=rows.reduce((s,p)=>s+p.spend,0), totalRev=rows.reduce((s,p)=>s+p.revenue,0);
   document.getElementById('overview-contrib').innerHTML = rows.length ? rows.map(p=>{
@@ -1063,24 +1133,24 @@ function renderChannels(){
       <td class="num-col num">${p.convrate.toFixed(2)}%</td><td class="num-col num">${p.ctr ? p.ctr.toFixed(2)+'%' : '—'}</td></tr>`).join('') || '<tr><td colspan="7" style="color:var(--text-muted);text-align:center;padding:18px;">No data for current filters.</td></tr>';
   bindTooltips(document.getElementById('channel-table-body'));
   const placements = placementRows();
-  renderRankList('placement-list',[...placements].sort((a,b)=>b.roas-a.roas),'roas',d=>'#5B6EF5',d=>d.roas.toFixed(2)+'x');
-  renderRankList('placement-rev-list',[...placements].sort((a,b)=>b.revenue-a.revenue),'revenue',d=>'#34D399',d=>fmtM(d.revenue));
+  renderRankList('placement-list',[...placements].sort((a,b)=>b.roas-a.roas),'roas',d=>'#5B6EF5',d=>d.roas.toFixed(2)+'x','placement');
+  renderRankList('placement-rev-list',[...placements].sort((a,b)=>b.revenue-a.revenue),'revenue',d=>'#34D399',d=>fmtM(d.revenue),'placement');
 }
 
 /* ============ AUDIENCES + CREATIVE ============ */
 function renderAudiences(){
-  renderRankList('age-list',[...ageRows()].sort((a,b)=>b.roas-a.roas),'roas',d=>'#5B6EF5',d=>d.roas.toFixed(2)+'x');
-  renderRankList('device-list',[...deviceRows()].sort((a,b)=>b.roas-a.roas),'roas',d=>d.roas>8?'#34D399':(d.roas>5?'#5B6EF5':'#F0665E'),d=>d.roas.toFixed(2)+'x');
-  renderRankList('gender-list',[...genderRows()].sort((a,b)=>b.revenue-a.revenue),'revenue',d=>'#5B6EF5',d=>fmtM(d.revenue));
+  renderRankList('age-list',[...ageRows()].sort((a,b)=>b.roas-a.roas),'roas',d=>'#5B6EF5',d=>d.roas.toFixed(2)+'x','age');
+  renderRankList('device-list',[...deviceRows()].sort((a,b)=>b.roas-a.roas),'roas',d=>d.roas>8?'#34D399':(d.roas>5?'#5B6EF5':'#F0665E'),d=>d.roas.toFixed(2)+'x','device');
+  renderRankList('gender-list',[...genderRows()].sort((a,b)=>b.revenue-a.revenue),'revenue',d=>'#5B6EF5',d=>fmtM(d.revenue),'gender');
   const incomeBrackets = incomeRows();
   document.getElementById('income-table-body').innerHTML=incomeBrackets.length ? incomeBrackets.map(b=>`<tr data-tooltip-title="${b.name}" data-tooltip-body="Revenue: ${fmt$(b.revenue)} · Conversion rate: ${b.convrate.toFixed(2)}%"><td>${b.name}</td><td class="num-col num">${fmtM(b.revenue)}</td><td class="num-col num">${b.convrate.toFixed(2)}%</td></tr>`).join('') : '<tr><td colspan="3" style="color:var(--text-muted);text-align:center;padding:14px;">No data for current filters.</td></tr>';
   bindTooltips(document.getElementById('income-table-body'));
 }
 function renderCreative(){
   const cf = creativeRows();
-  renderRankList('creative-format-list',[...cf].sort((a,b)=>b.roas-a.roas),'roas',d=>'#5B6EF5',d=>d.roas.toFixed(2)+'x');
-  renderRankList('creative-ctr-list',[...cf].sort((a,b)=>b.ctr-a.ctr),'ctr',d=>'#34D399',d=>d.ctr.toFixed(2)+'%');
-  renderRankList('emotion-list',[...emotionRows()].sort((a,b)=>b.convrate-a.convrate),'convrate',d=>'#5B6EF5',d=>d.convrate.toFixed(2)+'%');
+  renderRankList('creative-format-list',[...cf].sort((a,b)=>b.roas-a.roas),'roas',d=>'#5B6EF5',d=>d.roas.toFixed(2)+'x','creative');
+  renderRankList('creative-ctr-list',[...cf].sort((a,b)=>b.ctr-a.ctr),'ctr',d=>'#34D399',d=>d.ctr.toFixed(2)+'%','creative');
+  renderRankList('emotion-list',[...emotionRows()].sort((a,b)=>b.convrate-a.convrate),'convrate',d=>'#5B6EF5',d=>d.convrate.toFixed(2)+'%','emotion');
 }
 
 /* ============ INTERACTIVE SVG MATRICES ============ */

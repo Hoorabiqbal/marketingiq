@@ -44,16 +44,19 @@ which query the actual CSV with pandas.
    pip install -r requirements.txt
    ```
 
-2. **Get a free API key** — no credit card, no billing setup:
-   - Go to https://aistudio.google.com/apikey
+2. **Get one or more free API keys** — no credit card, no billing setup:
+   - Go to https://aistudio.google.com/apikey (repeat with a different Google account for
+     additional keys, if you want automatic fallback — see below)
    - Sign in with any Google account
    - Click "Create API key" — that's it, no payment method requested
 
-3. **Add your key**:
+3. **Add your key(s)**:
    ```
    copy .env.example .env
    ```
-   Open `.env` and paste your real key after `GEMINI_API_KEY=`.
+   Open `.env` and either set `GEMINI_API_KEY=` for a single key, or
+   `GEMINI_API_KEY_1=`, `GEMINI_API_KEY_2=`, `GEMINI_API_KEY_3=`, ... for automatic
+   fallback across multiple keys (see "Automatic key fallback" below).
    **Never commit `.env`** — it's already in `.gitignore`.
 
 4. **Run the server**:
@@ -63,13 +66,29 @@ which query the actual CSV with pandas.
 
 5. **Verify it's working** — open http://localhost:8000/api/health. You should see:
    ```
-   {"status":"ok","campaigns_loaded":10000,"gemini_key_configured":true}
+   {"status":"ok","campaigns_loaded":10000,"gemini_key_configured":true,"gemini_keys_configured":1}
    ```
    If `gemini_key_configured` is `false`, the `.env` file isn't being found or is empty —
    double check it's named exactly `.env` (not `.env.txt`) and sits directly in this folder.
 
 6. **Open the dashboard** (`site/index.html`, served locally — see the main project docs
    for why `file://` doesn't work for the AI Analyst) and try the AI Analyst tab.
+
+## Automatic key fallback
+
+If you're doing heavy testing (or expect real usage) and don't want a single free-tier
+quota to be a bottleneck, set `GEMINI_API_KEY_1`, `GEMINI_API_KEY_2`, `GEMINI_API_KEY_3`, etc.
+instead of a single `GEMINI_API_KEY`. Behavior (implemented in `gemini_rotator.py`):
+
+- Requests use one key normally — **keys are not rotated on every request**, only when
+  the current one actually hits its quota.
+- On a quota/rate-limit error (429), the backend automatically retries with the next
+  configured key. It remembers which key last worked, so future requests start there
+  directly rather than re-trying an already-exhausted key every time.
+- An authentication error (a genuinely invalid key) does **not** trigger rotation — that's
+  a configuration problem reported directly, since a different key wouldn't fix a typo'd one.
+- If every configured key is out of quota, you get one clean message rather than a raw error.
+- Add as many `GEMINI_API_KEY_<n>` as you want — no code changes needed.
 
 ## Free tier limits to know
 
@@ -101,8 +120,10 @@ in `main.py`'s tool definitions for a new metric — every existing tool (`rank_
 ## Before deploying publicly
 
 - Change `allow_origins=["*"]` in `main.py` to your actual deployed frontend URL.
-- Set `GEMINI_API_KEY` as a secret/environment variable on whatever host you use
-  (Render, Railway, Fly.io, etc.) — never bake it into the code or a committed file.
+- Set `GEMINI_API_KEY` (or `GEMINI_API_KEY_1`, `_2`, `_3`, ...) as environment
+  variables/secrets on whatever host you use (Render, Railway, Fly.io, etc.) — in Render
+  specifically, this is the "Environment Variables" section when creating/editing the Web
+  Service — never bake keys into the code or a committed file.
 - Update `AI_BACKEND_URL` in `site/index.html` (near the top of the AI Analyst script
   section) to point at your deployed backend URL instead of `127.0.0.1:8000`.
 - If the project grows beyond the free tier's request volume, Gemini's paid tier (or

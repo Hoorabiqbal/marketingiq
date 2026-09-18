@@ -73,9 +73,24 @@ def list_available_fields() -> dict:
     }
 
 
+# Frontend chart-click filters use these field names (see filterState in index.html);
+# they don't all match DIMENSION_COLUMNS' naming, so map them explicitly here.
+CHART_FILTER_COLUMNS = {
+    "gender": "target_audience_gender",
+    "device": "device_type",
+    "age": "target_audience_age",
+    "creative": "creative_format",
+    "emotion": "creative_emotion",
+    "placement": "ad_placement",
+    "income": "income_bracket",
+}
+
+
 def apply_global_filters(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
     """Mirrors the dashboard's own campaignMatches() logic exactly, so the AI is always
-    reasoning over the SAME subset of data the user is currently looking at on screen."""
+    reasoning over the SAME subset of data the user is currently looking at on screen —
+    including chart-click cross-filters (gender/device/age/creative/emotion/placement/income),
+    not just the five sidebar dropdown filters."""
     if not filters:
         return df
     if filters.get("platform") and filters["platform"] != "All Platforms":
@@ -91,6 +106,10 @@ def apply_global_filters(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
         df = df[df["retargeting_flag"] == True]  # noqa: E712
     elif retarget == "Cold Audience Only":
         df = df[df["retargeting_flag"] == False]  # noqa: E712
+    for field, col in CHART_FILTER_COLUMNS.items():
+        val = filters.get(field)
+        if val:
+            df = df[df[col] == val]
     return df
 
 
