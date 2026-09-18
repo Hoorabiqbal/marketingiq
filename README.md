@@ -11,6 +11,17 @@ export), with a genuinely data-grounded AI Analyst on top.
 
 ---
 
+## Live demo
+
+**Dashboard:** https://marketingiqp.netlify.app
+**Backend API:** https://marketingiq-backend.onrender.com/api/health
+
+The backend runs on Render's free tier, which spins down after ~15 minutes of inactivity —
+if the AI Analyst seems slow to respond the first time, that's it waking back up (takes
+~30–60 seconds), not a bug.
+
+---
+
 ## What it does
 
 MarketingIQ helps a marketing team answer the questions that actually drive budget decisions:
@@ -41,9 +52,13 @@ see `docs/` for image guidance.)*
   (CTR vs. creative age), CTA impact, and conversion rate by emotional hook.
 - **Real, working filters** — platform, objective, industry vertical, budget tier, and
   retargeting status all genuinely re-filter every KPI, chart, and table from the full
-  dataset (not a decorative UI).
+  dataset (not a decorative UI). Clicking a bar in the Audience, Creative, or Channel charts
+  (age, device, gender, creative format, emotion, placement, or platform) also applies as a
+  live cross-filter, combinable with the sidebar filters and removable via a chip UI —
+  similar to drill-down filtering in tools like Power BI.
 - **AI Marketing Analyst** — ask open-ended questions in plain English; answers are computed
-  live from the real dataset via tool-use, not templated or hardcoded (see below).
+  live from the real dataset via tool-use, not templated or hardcoded (see below). Supports
+  automatic fallback across multiple Gemini API keys if one hits its free-tier quota.
 - Light/dark theme, hover tooltips on every chart, responsive dense layout.
 
 ## Tech stack
@@ -104,6 +119,8 @@ how it avoids hallucination:
 6. Multi-step reasoning is supported — e.g. "underperforming campaigns" first calls
    `get_numeric_field_stats` to get real percentiles, then uses those as thresholds in
    `filter_campaigns`, rather than a guessed definition of "underperforming."
+7. If multiple Gemini API keys are configured (`GEMINI_API_KEY_1`, `_2`, `_3`, ...), a quota
+   error on one automatically retries on the next — see `backend/gemini_rotator.py`.
 
 Adding a new askable dimension or metric is a one-line change in `backend/data_tools.py` —
 not a new question/answer branch.
@@ -141,6 +158,7 @@ marketingiq/
 ├── backend/                     # only needed for the AI Analyst tab
 │   ├── main.py
 │   ├── data_tools.py
+│   ├── gemini_rotator.py        # multi-key fallback if one Gemini key hits its quota
 │   ├── requirements.txt
 │   ├── test_app.py
 │   ├── .env.example
