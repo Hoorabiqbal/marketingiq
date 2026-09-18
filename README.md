@@ -34,15 +34,21 @@ MarketingIQ helps a marketing team answer the questions that actually drive budg
 
 ## Screenshots
 
-*(Add screenshots of the Overview, Campaigns, and AI Analyst pages here before publishing —
-see `docs/` for image guidance.)*
+<img width="1828" height="945" alt="Overview" src="https://github.com/user-attachments/assets/e910051b-b55b-4de1-8f55-6988e799ba83" />
+<img width="1830" height="954" alt="Champains" src="https://github.com/user-attachments/assets/a2c5295e-4229-4435-8e79-ed96b7438f68" />
+<img width="1833" height="952" alt="Channels" src="https://github.com/user-attachments/assets/76ab75e0-2dfd-45c6-b038-19c224417825" />
+<img width="1828" height="948" alt="Audience" src="https://github.com/user-attachments/assets/228396f6-6d08-4d5b-8e0d-a1d564b4b0da" />
+<img width="1829" height="949" alt="Audience" src="https://github.com/user-attachments/assets/27e2df74-bc4e-429a-a4c3-8b8863473711" />
+<img width="1828" height="951" alt="Creative" src="https://github.com/user-attachments/assets/46b4bdca-ff35-424a-b139-24d132116af2" />
+<img width="1828" height="951" alt="AI Analyst" src="https://github.com/user-attachments/assets/3f3270c0-d15c-4193-a079-70759ca83555" />
+
 
 ## Features
 
 - **Executive Overview** — KPI strip with real deltas, revenue/spend trend, ROAS-by-platform
   ranking, marketing funnel, campaign opportunity matrix, budget-vs-revenue contribution,
   top/risk campaigns, and auto-generated insights.
-- **Campaign Analytics** — sortable, searchable ledger over all 10,000 real campaigns, live
+- **Campaign Analytics** — sortable, searchable ledger over all 10,000 real campaigns,live
   KPI recalculation, and a real ROAS-vs-conversions opportunity matrix.
 - **Channel & Platform Analytics** — full platform comparison table (spend, revenue, ROAS,
   CPA, conversion rate, CTR) and ad-placement performance.
