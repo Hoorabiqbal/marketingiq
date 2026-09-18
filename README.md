@@ -33,11 +33,23 @@ MarketingIQ helps a marketing team answer the questions that actually drive budg
 - "Ask" those same questions in plain English and get a real, data-grounded answer.
 
 ## Screenshots
+  **Overview**
+<img width="1830" height="954" alt="Screenshot 2026-09-18 172114" src="https://github.com/user-attachments/assets/eae04756-4d9b-41cb-a2b6-f1155de23d31" />
 
-<img width="1830" height="954" alt="Overview"<img width="1828" height="945" alt="Campaign" src="https://github.com/user-attachments/assets/cc097b84-9154-418b-955e-bcef3e0c09e4" />
-" src="https://github.com/user-attachments/assets/60ea8784-912f-4802-99cd-ab09ff07aaaa" />
+ **Campaings**
+ <img width="1828" height="945" alt="Screenshot 2026-09-18 172139" src="https://github.com/user-attachments/assets/f96ba99f-2cf9-4d09-93ac-1f94bf3d67e2" />
 
+ **Channels**
+ <img width="1828" height="951" alt="Screenshot 2026-09-18 172155" src="https://github.com/user-attachments/assets/84b93c97-b30b-4604-ad08-7d6f11471668" />
 
+ **Audiences**
+ <img width="1829" height="949" alt="Screenshot 2026-09-18 172209" src="https://github.com/user-attachments/assets/5f532d40-7893-4c1f-a2c8-5c6d5c26fc61" />
+
+**Creative**
+<img width="1828" height="948" alt="Screenshot 2026-09-18 172223" src="https://github.com/user-attachments/assets/961f1142-0a5f-4355-87b9-9803be4ac31d" />
+
+**AI Analyst**
+<img width="1833" height="952" alt="Screenshot 2026-09-18 172241" src="https://github.com/user-attachments/assets/fba0ecf4-73a0-4b46-9b22-20605d59ab36" />
 
 ## Features
 
