@@ -4,21 +4,23 @@
 
 A portfolio analytics application that turns a 10,000-campaign digital advertising dataset into
 an interactive, data-grounded decision-support tool — built as a real web app (not a BI-tool
-export), with a genuinely data-grounded AI Analyst on top.
+export), with a genuinely data-grounded AI Analyst on top and a premium glassmorphism UI.
 
 > Built end-to-end: data inspection → analytical layer → UI design → interactive frontend →
-> data pipeline → AI integration → testing → deployment.
+> data pipeline → AI integration → testing → deployment → iterative refinement.
 
 ---
 
 ## Live demo
 
-**Dashboard:** https://marketingiqp.netlify.app
-**Backend API:** https://marketingiq-backend.onrender.com/api/health
+**Landing page:** https://marketingiqp.netlify.app
+**Dashboard (direct):** https://marketingiqp.netlify.app/dashboard.html
+**Backend API health check:** https://marketingiq-backend.onrender.com/api/health
 
 The backend runs on Render's free tier, which spins down after ~15 minutes of inactivity —
-if the AI Analyst seems slow to respond the first time, that's it waking back up (takes
-~30–60 seconds), not a bug.
+if the AI Analyst is slow to respond the first time, that's it waking back up (~30–60 seconds),
+not a bug. Occasional "servers overloaded, try again" messages from the AI Analyst reflect
+transient load on Google's free-tier Gemini infrastructure, not an issue with this app.
 
 ---
 
@@ -32,56 +34,37 @@ MarketingIQ helps a marketing team answer the questions that actually drive budg
 - Which audiences, devices, and creative formats convert best?
 - "Ask" those same questions in plain English and get a real, data-grounded answer.
 
-## Screenshots
-  **Overview**
-<img width="1830" height="954" alt="Screenshot 2026-09-18 172114" src="https://github.com/user-attachments/assets/eae04756-4d9b-41cb-a2b6-f1155de23d31" />
-
- **Campaings**
- <img width="1828" height="945" alt="Screenshot 2026-09-18 172139" src="https://github.com/user-attachments/assets/f96ba99f-2cf9-4d09-93ac-1f94bf3d67e2" />
-
- **Channels**
- <img width="1828" height="951" alt="Screenshot 2026-09-18 172155" src="https://github.com/user-attachments/assets/84b93c97-b30b-4604-ad08-7d6f11471668" />
-
- **Audiences**
- <img width="1829" height="949" alt="Screenshot 2026-09-18 172209" src="https://github.com/user-attachments/assets/5f532d40-7893-4c1f-a2c8-5c6d5c26fc61" />
-
-**Creative**
-<img width="1828" height="948" alt="Screenshot 2026-09-18 172223" src="https://github.com/user-attachments/assets/961f1142-0a5f-4355-87b9-9803be4ac31d" />
-
-**AI Analyst**
-<img width="1833" height="952" alt="Screenshot 2026-09-18 172241" src="https://github.com/user-attachments/assets/fba0ecf4-73a0-4b46-9b22-20605d59ab36" />
-
 ## Features
 
-- **Executive Overview** — KPI strip with real deltas, revenue/spend trend, ROAS-by-platform
-  ranking, marketing funnel, campaign opportunity matrix, budget-vs-revenue contribution,
-  top/risk campaigns, and auto-generated insights.
-- **Campaign Analytics** — sortable, searchable ledger over all 10,000 real campaigns,live
-  KPI recalculation, and a real ROAS-vs-conversions opportunity matrix.
-- **Channel & Platform Analytics** — full platform comparison table (spend, revenue, ROAS,
-  CPA, conversion rate, CTR) and ad-placement performance.
-- **Audience & Device Analytics** — ROAS by age group and device, revenue by gender,
-  conversion rate by income bracket.
-- **Creative Performance** — ROAS/CTR by creative format, a real creative-fatigue curve
-  (CTR vs. creative age), CTA impact, and conversion rate by emotional hook.
+- **Landing page** — a premium entry point with a live, tilted preview of the actual dashboard
+  (not a mockup — a real embedded instance of it), before continuing into the app itself.
+- **5 analytics pages** — Executive Overview, Campaign, Channel, Audience, and AI Analyst —
+  each with KPI cards, charts, and tables computed live from the full dataset.
 - **Real, working filters** — platform, objective, industry vertical, budget tier, and
   retargeting status all genuinely re-filter every KPI, chart, and table from the full
-  dataset (not a decorative UI). Clicking a bar in the Audience, Creative, or Channel charts
-  (age, device, gender, creative format, emotion, placement, or platform) also applies as a
-  live cross-filter, combinable with the sidebar filters and removable via a chip UI —
-  similar to drill-down filtering in tools like Power BI.
+  dataset (not a decorative UI). Clicking a bar in the Audience or Channel charts (age,
+  device, gender, creative format, emotion, placement, or platform) also applies as a live
+  cross-filter, combinable with the sidebar filters and removable via a chip UI — similar to
+  drill-down filtering in tools like Power BI.
 - **AI Marketing Analyst** — ask open-ended questions in plain English; answers are computed
   live from the real dataset via tool-use, not templated or hardcoded (see below). Supports
   automatic fallback across multiple Gemini API keys if one hits its free-tier quota.
-- Light/dark theme, hover tooltips on every chart, responsive dense layout.
+- **Glassmorphism design system** — a 3-level frosted-glass surface hierarchy (standard /
+  elevated / focused) across both a dark (midnight) and light (pearl) theme, with the
+  preference synced between the landing page and dashboard.
+- **Fully responsive** — desktop, laptop, tablet, and mobile, including an off-canvas
+  navigation drawer on narrow screens and controlled (non-oversized) typography in
+  expanded/focused chart views.
+- Hover tooltips on every chart, sortable/searchable campaign table, real creative-fatigue
+  and opportunity-matrix analysis.
 
 ## Tech stack
 
 | Layer | Technology |
 |---|---|
-| Frontend | HTML, CSS, vanilla JavaScript (no framework) — inline SVG for charts |
+| Frontend | HTML, CSS, vanilla JavaScript (no framework) — inline SVG for all charts |
 | Data pipeline | Python, Pandas |
-| AI backend | FastAPI, Google Gemini API (`gemini-3.6-flash`, free tier) |
+| AI backend | FastAPI, Google Gemini API (`gemini-3.6-flash`, free tier, multi-key fallback) |
 | Data | A 10,000-row synthetic digital-advertising campaign dataset (41 columns) |
 
 No paid services are required to run this project — the Gemini API's free tier requires no
@@ -97,33 +80,38 @@ site/data.js  — real per-campaign records + precomputed aggregates, embedded a
                 a JS global (avoids a fetch-based CORS issue when opened locally)
         │
         ▼
-site/index.html — dashboard UI, all filtering/charts computed client-side from
-                   the real data in data.js
+site/index.html (landing page) ──► site/dashboard.html (the actual app)
+                                     all filtering/charts computed client-side
+                                     from the real data in data.js
         │
         ▼  (AI Analyst tab only)
 backend/main.py (FastAPI) ── Gemini tool-use loop ── backend/data_tools.py
-        │                                             (pandas query layer,
-        ▼                                              same CSV, live filters)
+        │         │                                   (pandas query layer,
+        │         ▼                                    same CSV, live filters)
+        │   backend/gemini_rotator.py — automatic fallback across multiple
+        │   Gemini API keys if one hits its free-tier quota
+        ▼
 Grounded, business-analyst-style answer, returned to the chat UI
 ```
 
-The dashboard itself (charts, filters, tables) is a fully static site — it works with the
+`site/dashboard.html` (charts, filters, tables) is a fully static page — it works with the
 backend turned off. Only the **AI Analyst tab** needs the backend running, since it's the
-only feature that calls out to an LLM.
+only feature that calls out to an LLM. `site/index.html` is a lightweight landing page that
+embeds a live, non-interactive preview of the real dashboard.
 
 ## The AI Analyst, in detail
 
 This is the part of the brief most prone to hand-waving ("connect an AI"), so here's exactly
 how it avoids hallucination:
 
-1. The user's question, conversation history, and currently active dashboard filters are
-   sent to the backend.
+1. The user's question, conversation history, and currently active dashboard filters (sidebar
+   *and* chart-click cross-filters) are sent to the backend.
 2. Gemini is given a fixed set of **data tools** (`get_totals`, `rank_dimension`,
    `compare_entities`, `filter_campaigns`, `percentage_share`, `trend_over_time`, etc.) — it
    decides which tool(s) to call and with what parameters, based on the actual question. This
    is real intent interpretation, not a hardcoded list of recognized questions.
 3. The backend executes the chosen tool(s) against the real Pandas dataframe — the same
-   dashboard filters the user has active are applied automatically inside every tool call.
+   filters the user has active are applied automatically inside every tool call.
 4. The real, computed result is sent back to Gemini as a tool result.
 5. Gemini writes the final answer **using only that tool result** — a system prompt
    explicitly forbids inventing numbers, and requires an explicit "not available in the
@@ -134,7 +122,9 @@ how it avoids hallucination:
    `get_numeric_field_stats` to get real percentiles, then uses those as thresholds in
    `filter_campaigns`, rather than a guessed definition of "underperforming."
 7. If multiple Gemini API keys are configured (`GEMINI_API_KEY_1`, `_2`, `_3`, ...), a quota
-   error on one automatically retries on the next — see `backend/gemini_rotator.py`.
+   error on one automatically retries on the next, without rotating on unrelated errors
+   (authentication or malformed-request errors are reported directly instead) — see
+   `backend/gemini_rotator.py`.
 
 Adding a new askable dimension or metric is a one-line change in `backend/data_tools.py` —
 not a new question/answer branch.
@@ -166,8 +156,9 @@ marketingiq/
 │   └── tech_advertising_campaigns_dataset.csv
 ├── scripts/
 │   └── build_data.py          # regenerates site/data.js from the CSV
-├── site/                       # the static dashboard — deployable as-is
-│   ├── index.html
+├── site/                       # the static frontend — deployable as-is
+│   ├── index.html               # landing page (entry point)
+│   ├── dashboard.html           # the actual analytics app
 │   └── data.js
 ├── backend/                     # only needed for the AI Analyst tab
 │   ├── main.py
@@ -182,10 +173,10 @@ marketingiq/
 
 ## Setup
 
-### Option A — Dashboard only (no AI, no Python needed to run it)
+### Option A — Frontend only (no AI, no Python needed to run it)
 
-Just open `site/index.html` in a browser. Everything except the AI Analyst tab works
-immediately, since all data is embedded in `site/data.js`.
+Just open `site/index.html` (or `site/dashboard.html` directly) in a browser. Everything
+except the AI Analyst tab works immediately, since all data is embedded in `site/data.js`.
 
 *(Note: on some browsers, opening via `file://` can block the AI Analyst's network request
 even with the backend running — see Option B for the fix, serving it over a local address.)*
@@ -206,29 +197,32 @@ even with the backend running — see Option B for the fix, serving it over a lo
    cd site
    python -m http.server 5500 --bind 127.0.0.1
    ```
-5. Open `http://127.0.0.1:5500/index.html`, with the backend running at
-   `http://127.0.0.1:8000` in a separate terminal.
+5. Open `http://127.0.0.1:5500/index.html` (or go straight to `dashboard.html`), with the
+   backend running at `http://127.0.0.1:8000` in a separate terminal.
 
 ## Environment variables
 
 All secrets live in `backend/.env` (never committed — see `.gitignore`). See
-`backend/.env.example` for the exact variable name and where to get a free key.
+`backend/.env.example` for the exact variable names (single key or multi-key fallback) and
+where to get a free one.
 
 ## Testing
 
-- `backend/test_app.py` — automated tests of the AI tool-use loop (filter injection,
-  hallucination guarding, multi-tool chaining, retry-on-overload, graceful missing-key
-  handling) using mocked Gemini responses built from the real SDK's own types.
+- `backend/test_app.py` — automated tests of the AI tool-use loop and key-rotation logic
+  (filter injection, hallucination guarding, multi-tool chaining, retry-on-overload, key
+  fallback on quota errors, graceful missing-key handling) using mocked Gemini responses
+  built from the real SDK's own types.
 - Frontend behavior (zero-match filters, search edge cases, sort correctness, chart
-  rendering under empty data) was verified with an automated headless-browser test pass
-  during development.
+  cross-filtering, responsive navigation, theme persistence) was verified with an automated
+  headless-browser test pass during development — 60+ test cases across multiple suites.
 
 ## Limitations
 
 - The dataset is synthetic/public, not live production ad-platform data.
-- The AI Analyst's free-tier Gemini access is rate-limited (~1,500 requests/day) and can
-  occasionally return a transient "servers overloaded" message under high demand — the app
-  retries automatically before showing this to the user.
+- The AI Analyst's free-tier Gemini access is rate-limited per key (~1,500 requests/day) and
+  can occasionally return a transient "servers overloaded" message under high demand on
+  Google's end — the app retries automatically before showing this to the user, and multiple
+  API keys can be configured for quota fallback.
 - Filtering, charts, and the campaign ledger operate on the full 10,000-row dataset, but the
   campaign ledger table displays the top 100 matching rows at a time for performance; the KPI
   totals above it reflect the complete filtered set regardless.
