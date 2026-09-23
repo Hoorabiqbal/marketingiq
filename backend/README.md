@@ -110,6 +110,94 @@ verify the plumbing works before you have a real key:
 python test_app.py
 ```
 
+## Data layer (DuckDB)
+
+```
+Query Router / Gemini tool calls
+        │  (known tools only — no free-form SQL)
+        ▼
+data_tools.py          business logic: metric formulas, what each dashboard filter means,
+        │              ranking and rounding (unchanged names, inputs and outputs)
+        ▼
+campaign_repository.py data access: generic filter / aggregate / group operations
+        │
+        ▼
+DuckDB (in-memory)     primary engine  ·  Pandas: automatic fallback + correctness reference
+```
+
+- **Source of truth is still the CSV.** At startup it is read once with Pandas, and an
+  in-memory DuckDB table is built from that same parsed data. There is no database file.
+  `/api/health` reports the active `data_backend`. Set `MARKETINGIQ_DATA_BACKEND=pandas` to
+  use the Pandas backend instead; the app also falls back to it on its own (with a log
+  line) if DuckDB can't start.
+- **All SQL lives in `campaign_repository.py`.** Column names are checked against the
+  table's real schema, operators against a fixed list, and every value is a bound `?`
+  parameter. The router, the LLM Adapter and the endpoints never build SQL, and there is
+  no text-to-SQL. Questions reach the data only through the fixed set of tools, which keeps
+  the data layer's behaviour predictable, testable and safe.
+- **The LLM still never receives the dataset.** Tools return small aggregates, and the
+  router and adapter cap what is passed on (see below).
+- **Correctness:** `test_data_layer.py` checks both backends against
+  `data_layer_golden.json`, which holds the original Pandas implementation's output for 51
+  cases.
+- **Speed:** `benchmark_data_layer.py` measures each tool on either backend.
+
+## Query Router (`/api/query`)
+
+`query_router.py` is a deterministic routing layer that decides where a question goes
+**without calling any LLM** (keyword/regex rules, no API call to classify). It runs
+alongside `/api/chat`, which is unchanged and still uses its own Gemini tool-use loop.
+
+```
+POST /api/query   {"query": "Which platform has the highest ROAS?", "filters": {...}}
+```
+
+| Route | When | What comes back |
+|---|---|---|
+| `DIRECT_DATABASE` | The question maps to one existing tool ("total revenue", "highest ROAS by platform", "monthly revenue", "campaigns with ROAS above 8") | `tool`, `tool_input` and the exact `result` from that tool |
+| `LLM_REQUIRED` | The question asks for an explanation ("why", "explain", "what's causing") | `analysis` (a few small tool results), `explanation` (text from the LLM Adapter, or `null` if it failed) and `llm` (status, provider, error code) |
+| `NEEDS_CLARIFICATION` / `UNSUPPORTED` | Ambiguous, or asks for something the dataset doesn't have (e.g. geography) | A `message` explaining what can be asked |
+
+The router is not a second analytics engine: every number comes from an existing
+`data_tools.py` function (`TOOL_REGISTRY`), with the active dashboard filters applied
+exactly as in `/api/chat`.
+
+**Why the LLM never gets the full dataset:** for `LLM_REQUIRED` the router runs at most 3
+tools and caps each list (at most 10 campaign rows and 30 series points, 16 KB total), so
+the context stays the same size however large the dataset gets. It's also cheaper and
+faster, and it keeps the LLM limited to aggregates that were actually computed.
+
+Errors return a safe message with no stack trace: `400` for an empty or invalid query,
+`422` for a malformed body, `503` if the data or a tool isn't available, and `500` if a
+tool fails. Each request writes one structured log line (query, route, tools,
+elapsed_ms, status).
+
+### LLM Adapter
+
+`LLM_REQUIRED` answers are explained through `llm_adapter.py`: a provider-independent
+`LLMProvider` interface (`generate_explanation(question, analysis, timeout_s)`) plus an
+`LLMAdapter` that validates the analysis before anything is sent. It refuses anything that
+isn't plain JSON (such as a DataFrame), anything over 16 KB, and empty results. It also
+turns every provider failure into a structured `llm` result, so the analysis is still
+returned when the LLM is down.
+
+Gemini is the only provider so far (`gemini_provider.py`). It reuses the app's existing
+`GeminiKeyRotator`, so it has the same keys and quota rotation as `/api/chat`. It makes one
+call per question, with shared grounding instructions: use only the supplied numbers, keep
+facts and interpretation separate, and stay short. Each call has a hard timeout
+(`LLM_TIMEOUT_SECONDS`, default 25) that also bounds the server-error retries.
+`DIRECT_DATABASE` questions never reach the adapter.
+
+To add a provider, subclass `LLMProvider`, raise the `llm_adapter` error types, and pass it
+to `LLMAdapter` in `main.py`.
+
+Tests (no API key or quota needed, since Gemini is mocked and fails if called for real):
+```
+python test_query_router.py
+python test_llm_adapter.py
+python test_data_layer.py
+```
+
 ## Adding a new askable dimension or metric
 
 You do **not** need to add a new question/answer branch. Add one line to

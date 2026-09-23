@@ -26,14 +26,17 @@ import os
 import time
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 from google.genai import types
 
 import data_tools as dt
+import query_router as qr
+from gemini_provider import GeminiProvider
 from gemini_rotator import GeminiKeyRotator, load_keys
+from llm_adapter import DEFAULT_TIMEOUT_S, LLMAdapter
 
 APP_DIR = Path(__file__).parent
 load_dotenv(APP_DIR / ".env")
@@ -54,6 +57,11 @@ app.add_middleware(
 
 rotator = GeminiKeyRotator(load_keys())
 MODEL = "gemini-3.6-flash"  # free-tier model; update here if Google renames/replaces it again
+
+# Explanation layer for /api/query's LLM_REQUIRED route. Shares the rotator above, so keys,
+# rotation state and quota handling are the same ones /api/chat uses.
+llm_adapter = LLMAdapter(GeminiProvider(rotator, MODEL),
+                         timeout_s=float(os.getenv("LLM_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_S)))
 
 SYSTEM_PROMPT = """You are the MarketingIQ AI Analyst, a data-grounded marketing analytics assistant.
 
@@ -305,11 +313,28 @@ def chat(req: ChatRequest):
     return {"answer": "I wasn't able to reach a final answer for that question — try rephrasing it or breaking it into a simpler question."}
 
 
+class QueryRequest(BaseModel):
+    query: str = Field(max_length=qr.MAX_QUERY_LENGTH)
+    filters: dict[str, str | bool | None] = {}
+
+
+@app.post("/api/query")
+def query(req: QueryRequest):
+    """Query Router (query_router.py): DIRECT_DATABASE questions are answered by an existing
+    data tool with no LLM call; LLM_REQUIRED questions get a compact analysis explained via
+    the LLM Adapter. Runs alongside /api/chat, which is unchanged."""
+    try:
+        return qr.route_query(req.query, req.filters, explainer=llm_adapter)
+    except qr.QueryRouterError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.public_message)
+
+
 @app.get("/api/health")
 def health():
     return {
         "status": "ok",
         "campaigns_loaded": len(dt.get_dataframe()),
+        "data_backend": dt.data_backend_name(),
         "gemini_key_configured": rotator.configured,
         "gemini_keys_configured": len(rotator.clients),
     }

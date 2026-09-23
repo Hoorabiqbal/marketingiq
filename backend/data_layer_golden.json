@@ -1,0 +1,3048 @@
+{
+ "compare_filtered": {
+  "available_values": [
+   "Desktop"
+  ],
+  "dimension": "device",
+  "not_found": [
+   "Mobile",
+   "Tablet"
+  ],
+  "results": []
+ },
+ "compare_platforms": {
+  "available_values": [
+   "Facebook",
+   "Google Ads",
+   "Instagram",
+   "LinkedIn",
+   "TikTok",
+   "Twitter"
+  ],
+  "dimension": "platform",
+  "not_found": [
+   "Meta Ads"
+  ],
+  "results": [
+   {
+    "campaign_count": 1213,
+    "clicks": 2375647,
+    "conversion_rate": 3.439,
+    "conversions": 81687,
+    "cpa": 37.6,
+    "cpc": 1.293,
+    "ctr": 2.373,
+    "impressions": 100123347,
+    "name": "TikTok",
+    "profit": 31278715.96,
+    "revenue": 34349996.88,
+    "roas": 11.184,
+    "roi_pct": 1018.4,
+    "spend": 3071280.92
+   },
+   {
+    "campaign_count": 1468,
+    "clicks": 1539389,
+    "conversion_rate": 4.995,
+    "conversions": 76887,
+    "cpa": 131.11,
+    "cpc": 6.549,
+    "ctr": 1.926,
+    "impressions": 79936685,
+    "name": "LinkedIn",
+    "profit": 23234821.74,
+    "revenue": 33315694.35,
+    "roas": 3.305,
+    "roi_pct": 230.5,
+    "spend": 10080872.61
+   }
+  ]
+ },
+ "compare_retargeting": {
+  "dimension": "retargeting",
+  "results": [
+   {
+    "campaign_count": 2470,
+    "clicks": 3928612,
+    "conversion_rate": 5.678,
+    "conversions": 223074,
+    "cpa": 48.26,
+    "cpc": 2.74,
+    "ctr": 2.373,
+    "impressions": 165528864,
+    "name": "True",
+    "profit": 91488962.5,
+    "revenue": 102254922.48,
+    "roas": 9.498,
+    "roi_pct": 849.8,
+    "spend": 10765959.98
+   },
+   {
+    "campaign_count": 7530,
+    "clicks": 11335749,
+    "conversion_rate": 3.816,
+    "conversions": 432614,
+    "cpa": 75.56,
+    "cpc": 2.884,
+    "ctr": 2.1,
+    "impressions": 539863366,
+    "name": "False",
+    "profit": 149213082.18,
+    "revenue": 181902783.99,
+    "roas": 5.565,
+    "roi_pct": 456.5,
+    "spend": 32689701.81
+   }
+  ]
+ },
+ "entity_tiktok": {
+  "dimension": "platform",
+  "results": [
+   {
+    "campaign_count": 1213,
+    "clicks": 2375647,
+    "conversion_rate": 3.439,
+    "conversions": 81687,
+    "cpa": 37.6,
+    "cpc": 1.293,
+    "ctr": 2.373,
+    "impressions": 100123347,
+    "name": "TikTok",
+    "profit": 31278715.96,
+    "revenue": 34349996.88,
+    "roas": 11.184,
+    "roi_pct": 1018.4,
+    "spend": 3071280.92
+   }
+  ]
+ },
+ "fatigue": {
+  "buckets": [
+   {
+    "age_range": "0-15",
+    "ctr": 2.64
+   },
+   {
+    "age_range": "16-30",
+    "ctr": 2.65
+   },
+   {
+    "age_range": "31-45",
+    "ctr": 2.73
+   },
+   {
+    "age_range": "46-60",
+    "ctr": 2.01
+   },
+   {
+    "age_range": "61-90",
+    "ctr": 1.47
+   }
+  ]
+ },
+ "fatigue_filtered": {
+  "buckets": [
+   {
+    "age_range": "0-15",
+    "ctr": 2.38
+   },
+   {
+    "age_range": "16-30",
+    "ctr": 2.35
+   },
+   {
+    "age_range": "31-45",
+    "ctr": 2.45
+   },
+   {
+    "age_range": "46-60",
+    "ctr": 1.47
+   },
+   {
+    "age_range": "61-90",
+    "ctr": 1.14
+   }
+  ]
+ },
+ "fields": {
+  "date_range": [
+   "2024-01-01",
+   "2026-01-30"
+  ],
+  "dimensions": {
+   "age_group": [
+    "18-24",
+    "25-34",
+    "35-44",
+    "45-54",
+    "55-64",
+    "65+"
+   ],
+   "audience_interest": [
+    "Business Professionals",
+    "Gamers",
+    "Health & Fitness",
+    "Shoppers",
+    "Students",
+    "Tech Enthusiasts"
+   ],
+   "budget_tier": [
+    "High",
+    "Low",
+    "Medium"
+   ],
+   "creative_emotion": [
+    "Curiosity",
+    "Fear",
+    "Joy",
+    "Neutral",
+    "Trust",
+    "Urgency"
+   ],
+   "creative_format": [
+    "Carousel",
+    "Image",
+    "Interactive",
+    "Story",
+    "Text",
+    "Video"
+   ],
+   "device": [
+    "Desktop",
+    "Mobile",
+    "Tablet"
+   ],
+   "gender": [
+    "All",
+    "Female",
+    "Male"
+   ],
+   "income_bracket": [
+    "$100K-$200K",
+    "$50K-$100K",
+    "<$50K",
+    ">$200K"
+   ],
+   "objective": [
+    "App Installs",
+    "Brand Awareness",
+    "Conversions",
+    "Engagement",
+    "Lead Generation"
+   ],
+   "operating_system": [
+    "Android",
+    "Other",
+    "Windows",
+    "iOS",
+    "macOS"
+   ],
+   "placement": [
+    "Display Network",
+    "Feed",
+    "In-Stream Video",
+    "Search",
+    "Sidebar",
+    "Stories"
+   ],
+   "platform": [
+    "Facebook",
+    "Google Ads",
+    "Instagram",
+    "LinkedIn",
+    "TikTok",
+    "Twitter"
+   ],
+   "retargeting": [
+    "False",
+    "True"
+   ],
+   "vertical": [
+    "E-commerce",
+    "Education",
+    "Finance",
+    "Gaming",
+    "Healthcare",
+    "SaaS"
+   ]
+  },
+  "metrics": [
+   "spend",
+   "revenue",
+   "profit",
+   "conversions",
+   "clicks",
+   "impressions",
+   "roas",
+   "cpa",
+   "cpc",
+   "ctr",
+   "conversion_rate",
+   "quality_score",
+   "bounce_rate"
+  ],
+  "total_campaigns": 10000
+ },
+ "filter_invalid_condition_skipped": {
+  "campaigns": [
+   {
+    "conversion_rate": 1.25,
+    "cpa": 243.9,
+    "id": "CAMP_00601",
+    "objective": "Brand Awareness",
+    "platform": "Google Ads",
+    "profit": -2862.78,
+    "revenue": 3478.66,
+    "roas": 0.55,
+    "spend": 6341.44
+   },
+   {
+    "conversion_rate": 2.39,
+    "cpa": 170.24,
+    "id": "CAMP_05402",
+    "objective": "Engagement",
+    "platform": "Google Ads",
+    "profit": -2015.93,
+    "revenue": 2920.98,
+    "roas": 0.59,
+    "spend": 4936.91
+   },
+   {
+    "conversion_rate": 4.46,
+    "cpa": 159.69,
+    "id": "CAMP_07506",
+    "objective": "Engagement",
+    "platform": "LinkedIn",
+    "profit": -969.48,
+    "revenue": 2384.04,
+    "roas": 0.71,
+    "spend": 3353.52
+   },
+   {
+    "conversion_rate": 0.74,
+    "cpa": 152.68,
+    "id": "CAMP_08289",
+    "objective": "Brand Awareness",
+    "platform": "Twitter",
+    "profit": -277.48,
+    "revenue": 2318.13,
+    "roas": 0.89,
+    "spend": 2595.61
+   },
+   {
+    "conversion_rate": 1.66,
+    "cpa": 97.91,
+    "id": "CAMP_07599",
+    "objective": "Engagement",
+    "platform": "Twitter",
+    "profit": -192.65,
+    "revenue": 4115.44,
+    "roas": 0.96,
+    "spend": 4308.09
+   },
+   {
+    "conversion_rate": 1.96,
+    "cpa": 219.94,
+    "id": "CAMP_03943",
+    "objective": "Brand Awareness",
+    "platform": "Google Ads",
+    "profit": -162.31,
+    "revenue": 4896.41,
+    "roas": 0.97,
+    "spend": 5058.72
+   },
+   {
+    "conversion_rate": 0.51,
+    "cpa": 433.95,
+    "id": "CAMP_09603",
+    "objective": "Brand Awareness",
+    "platform": "Facebook",
+    "profit": 191.3,
+    "revenue": 18417.17,
+    "roas": 1.01,
+    "spend": 18225.87
+   },
+   {
+    "conversion_rate": 1.75,
+    "cpa": 87.43,
+    "id": "CAMP_08138",
+    "objective": "Engagement",
+    "platform": "Twitter",
+    "profit": 339.21,
+    "revenue": 951.21,
+    "roas": 1.55,
+    "spend": 612.0
+   },
+   {
+    "conversion_rate": 1.62,
+    "cpa": 119.75,
+    "id": "CAMP_06843",
+    "objective": "Brand Awareness",
+    "platform": "Twitter",
+    "profit": 1289.8,
+    "revenue": 3924.32,
+    "roas": 1.49,
+    "spend": 2634.52
+   },
+   {
+    "conversion_rate": 3.5,
+    "cpa": 79.71,
+    "id": "CAMP_04544",
+    "objective": "Lead Generation",
+    "platform": "Google Ads",
+    "profit": 1366.17,
+    "revenue": 2482.17,
+    "roas": 2.22,
+    "spend": 1116.0
+   }
+  ],
+  "matched_count": 182
+ },
+ "filter_multi_with_filters": {
+  "campaigns": [
+   {
+    "conversion_rate": 11.97,
+    "cpa": 10.11,
+    "id": "CAMP_03871",
+    "objective": "Lead Generation",
+    "platform": "TikTok",
+    "profit": 1238309.2,
+    "revenue": 1258308.08,
+    "roas": 62.92,
+    "spend": 19998.88
+   },
+   {
+    "conversion_rate": 25.0,
+    "cpa": 4.44,
+    "id": "CAMP_05087",
+    "objective": "Conversions",
+    "platform": "TikTok",
+    "profit": 712849.7,
+    "revenue": 720625.25,
+    "roas": 92.68,
+    "spend": 7775.55
+   },
+   {
+    "conversion_rate": 7.19,
+    "cpa": 12.94,
+    "id": "CAMP_06035",
+    "objective": "Conversions",
+    "platform": "TikTok",
+    "profit": 584619.97,
+    "revenue": 602497.36,
+    "roas": 33.7,
+    "spend": 17877.39
+   },
+   {
+    "conversion_rate": 9.9,
+    "cpa": 17.27,
+    "id": "CAMP_00760",
+    "objective": "Conversions",
+    "platform": "TikTok",
+    "profit": 422764.15,
+    "revenue": 434181.82,
+    "roas": 38.03,
+    "spend": 11417.67
+   },
+   {
+    "conversion_rate": 9.98,
+    "cpa": 11.33,
+    "id": "CAMP_01366",
+    "objective": "Brand Awareness",
+    "platform": "TikTok",
+    "profit": 289008.92,
+    "revenue": 293053.19,
+    "roas": 72.46,
+    "spend": 4044.27
+   },
+   {
+    "conversion_rate": 13.97,
+    "cpa": 4.15,
+    "id": "CAMP_02882",
+    "objective": "App Installs",
+    "platform": "TikTok",
+    "profit": 243389.58,
+    "revenue": 246536.66,
+    "roas": 78.34,
+    "spend": 3147.08
+   },
+   {
+    "conversion_rate": 8.63,
+    "cpa": 5.56,
+    "id": "CAMP_09769",
+    "objective": "Engagement",
+    "platform": "TikTok",
+    "profit": 226002.41,
+    "revenue": 228868.01,
+    "roas": 79.87,
+    "spend": 2865.6
+   },
+   {
+    "conversion_rate": 7.24,
+    "cpa": 22.38,
+    "id": "CAMP_09865",
+    "objective": "Conversions",
+    "platform": "TikTok",
+    "profit": 192329.44,
+    "revenue": 195328.06,
+    "roas": 65.14,
+    "spend": 2998.62
+   },
+   {
+    "conversion_rate": 11.54,
+    "cpa": 16.81,
+    "id": "CAMP_07131",
+    "objective": "Lead Generation",
+    "platform": "TikTok",
+    "profit": 168235.22,
+    "revenue": 171731.1,
+    "roas": 49.12,
+    "spend": 3495.88
+   },
+   {
+    "conversion_rate": 8.53,
+    "cpa": 4.22,
+    "id": "CAMP_02909",
+    "objective": "Lead Generation",
+    "platform": "TikTok",
+    "profit": 168246.77,
+    "revenue": 168985.13,
+    "roas": 228.87,
+    "spend": 738.36
+   }
+  ],
+  "matched_count": 64
+ },
+ "filter_no_match": {
+  "campaigns": [],
+  "matched_count": 0
+ },
+ "filter_roas_gt_8": {
+  "campaigns": [
+   {
+    "conversion_rate": 17.4,
+    "cpa": 1.72,
+    "id": "CAMP_01627",
+    "objective": "Lead Generation",
+    "platform": "TikTok",
+    "profit": 92202.53,
+    "revenue": 92392.13,
+    "roas": 487.3,
+    "spend": 189.6
+   },
+   {
+    "conversion_rate": 13.28,
+    "cpa": 5.12,
+    "id": "CAMP_02282",
+    "objective": "Lead Generation",
+    "platform": "Instagram",
+    "profit": 1063980.09,
+    "revenue": 1067129.85,
+    "roas": 338.8,
+    "spend": 3149.76
+   },
+   {
+    "conversion_rate": 17.63,
+    "cpa": 3.86,
+    "id": "CAMP_09356",
+    "objective": "Conversions",
+    "platform": "Twitter",
+    "profit": 82570.86,
+    "revenue": 82829.26,
+    "roas": 320.55,
+    "spend": 258.4
+   },
+   {
+    "conversion_rate": 8.53,
+    "cpa": 4.22,
+    "id": "CAMP_02909",
+    "objective": "Lead Generation",
+    "platform": "TikTok",
+    "profit": 168246.77,
+    "revenue": 168985.13,
+    "roas": 228.87,
+    "spend": 738.36
+   },
+   {
+    "conversion_rate": 10.01,
+    "cpa": 7.49,
+    "id": "CAMP_09844",
+    "objective": "Conversions",
+    "platform": "Twitter",
+    "profit": 938225.66,
+    "revenue": 942969.41,
+    "roas": 198.78,
+    "spend": 4743.75
+   },
+   {
+    "conversion_rate": 24.96,
+    "cpa": 4.09,
+    "id": "CAMP_08206",
+    "objective": "Lead Generation",
+    "platform": "Facebook",
+    "profit": 251302.86,
+    "revenue": 252667.62,
+    "roas": 185.14,
+    "spend": 1364.76
+   },
+   {
+    "conversion_rate": 25.0,
+    "cpa": 3.72,
+    "id": "CAMP_05048",
+    "objective": "Lead Generation",
+    "platform": "Facebook",
+    "profit": 985240.64,
+    "revenue": 990608.6,
+    "roas": 184.54,
+    "spend": 5367.96
+   },
+   {
+    "conversion_rate": 23.38,
+    "cpa": 2.4,
+    "id": "CAMP_03683",
+    "objective": "Conversions",
+    "platform": "Twitter",
+    "profit": 27770.24,
+    "revenue": 27925.92,
+    "roas": 179.38,
+    "spend": 155.68
+   },
+   {
+    "conversion_rate": 25.0,
+    "cpa": 3.36,
+    "id": "CAMP_09973",
+    "objective": "Engagement",
+    "platform": "Facebook",
+    "profit": 825467.14,
+    "revenue": 830251.78,
+    "roas": 173.52,
+    "spend": 4784.64
+   },
+   {
+    "conversion_rate": 15.32,
+    "cpa": 5.87,
+    "id": "CAMP_01633",
+    "objective": "Conversions",
+    "platform": "TikTok",
+    "profit": 141684.67,
+    "revenue": 142565.77,
+    "roas": 161.8,
+    "spend": 881.1
+   }
+  ],
+  "matched_count": 2483
+ },
+ "filter_spend_revenue": {
+  "campaigns": [
+   {
+    "conversion_rate": 0.44,
+    "cpa": 1953.7,
+    "id": "CAMP_01692",
+    "objective": "Lead Generation",
+    "platform": "LinkedIn",
+    "profit": -9429.16,
+    "revenue": 339.32,
+    "roas": 0.03,
+    "spend": 9768.48
+   },
+   {
+    "conversion_rate": 0.19,
+    "cpa": 2441.17,
+    "id": "CAMP_05658",
+    "objective": "App Installs",
+    "platform": "Instagram",
+    "profit": -9284.2,
+    "revenue": 480.47,
+    "roas": 0.05,
+    "spend": 9764.67
+   },
+   {
+    "conversion_rate": 0.71,
+    "cpa": 1720.94,
+    "id": "CAMP_09188",
+    "objective": "Brand Awareness",
+    "platform": "LinkedIn",
+    "profit": -8058.97,
+    "revenue": 545.75,
+    "roas": 0.06,
+    "spend": 8604.72
+   },
+   {
+    "conversion_rate": 0.25,
+    "cpa": 6379.94,
+    "id": "CAMP_01084",
+    "objective": "App Installs",
+    "platform": "LinkedIn",
+    "profit": -6165.05,
+    "revenue": 214.89,
+    "roas": 0.03,
+    "spend": 6379.94
+   },
+   {
+    "conversion_rate": 0.28,
+    "cpa": 1956.93,
+    "id": "CAMP_04306",
+    "objective": "Brand Awareness",
+    "platform": "LinkedIn",
+    "profit": -5321.32,
+    "revenue": 549.46,
+    "roas": 0.09,
+    "spend": 5870.78
+   }
+  ],
+  "matched_count": 8
+ },
+ "rank_age_group": {
+  "dimension": "age_group",
+  "metric": "roas",
+  "results": [
+   {
+    "campaign_count": 1838,
+    "clicks": 3443458,
+    "conversion_rate": 4.175,
+    "conversions": 143761,
+    "cpa": 64.86,
+    "cpc": 2.708,
+    "ctr": 2.691,
+    "impressions": 127974929,
+    "name": "18-24",
+    "profit": 55623527.09,
+    "revenue": 64947854.65,
+    "roas": 6.965,
+    "roi_pct": 596.5,
+    "spend": 9324327.56
+   },
+   {
+    "campaign_count": 2463,
+    "clicks": 3561721,
+    "conversion_rate": 4.424,
+    "conversions": 157553,
+    "cpa": 64.41,
+    "cpc": 2.849,
+    "ctr": 2.087,
+    "impressions": 170693875,
+    "name": "35-44",
+    "profit": 57390640.52,
+    "revenue": 67538413.59,
+    "roas": 6.655,
+    "roi_pct": 565.5,
+    "spend": 10147773.07
+   },
+   {
+    "campaign_count": 806,
+    "clicks": 966992,
+    "conversion_rate": 4.688,
+    "conversions": 45333,
+    "cpa": 65.04,
+    "cpc": 3.049,
+    "ctr": 1.582,
+    "impressions": 61107728,
+    "name": "55-64",
+    "profit": 16067852.16,
+    "revenue": 19016266.55,
+    "roas": 6.45,
+    "roi_pct": 545.0,
+    "spend": 2948414.39
+   },
+   {
+    "campaign_count": 1563,
+    "clicks": 2130833,
+    "conversion_rate": 4.22,
+    "conversions": 89917,
+    "cpa": 66.39,
+    "cpc": 2.801,
+    "ctr": 1.843,
+    "impressions": 115596689,
+    "name": "45-54",
+    "profit": 31930977.26,
+    "revenue": 37900356.87,
+    "roas": 6.349,
+    "roi_pct": 534.9,
+    "spend": 5969379.61
+   },
+   {
+    "campaign_count": 2933,
+    "clicks": 4754520,
+    "conversion_rate": 4.263,
+    "conversions": 202671,
+    "cpa": 68.56,
+    "cpc": 2.923,
+    "ctr": 2.339,
+    "impressions": 203290605,
+    "name": "25-34",
+    "profit": 74001555.83,
+    "revenue": 87897478.69,
+    "roas": 6.325,
+    "roi_pct": 532.5,
+    "spend": 13895922.86
+   },
+   {
+    "campaign_count": 397,
+    "clicks": 406837,
+    "conversion_rate": 4.044,
+    "conversions": 16453,
+    "cpa": 71.1,
+    "cpc": 2.875,
+    "ctr": 1.522,
+    "impressions": 26728404,
+    "name": "65+",
+    "profit": 5687491.82,
+    "revenue": 6857336.12,
+    "roas": 5.862,
+    "roi_pct": 486.2,
+    "spend": 1169844.3
+   }
+  ]
+ },
+ "rank_audience_interest": {
+  "dimension": "audience_interest",
+  "metric": "roas",
+  "results": [
+   {
+    "campaign_count": 1256,
+    "clicks": 1893391,
+    "conversion_rate": 4.609,
+    "conversions": 87259,
+    "cpa": 61.44,
+    "cpc": 2.832,
+    "ctr": 2.107,
+    "impressions": 89877645,
+    "name": "Shoppers",
+    "profit": 32641545.61,
+    "revenue": 38003121.64,
+    "roas": 7.088,
+    "roi_pct": 608.8,
+    "spend": 5361576.03
+   },
+   {
+    "campaign_count": 1530,
+    "clicks": 2400134,
+    "conversion_rate": 4.58,
+    "conversions": 109919,
+    "cpa": 63.23,
+    "cpc": 2.896,
+    "ctr": 2.191,
+    "impressions": 109562848,
+    "name": "Gamers",
+    "profit": 41780444.33,
+    "revenue": 48730103.88,
+    "roas": 7.012,
+    "roi_pct": 601.2,
+    "spend": 6949659.55
+   },
+   {
+    "campaign_count": 2489,
+    "clicks": 3712299,
+    "conversion_rate": 4.123,
+    "conversions": 153058,
+    "cpa": 67.93,
+    "cpc": 2.801,
+    "ctr": 2.18,
+    "impressions": 170256767,
+    "name": "Tech Enthusiasts",
+    "profit": 57930452.5,
+    "revenue": 68327689.41,
+    "roas": 6.572,
+    "roi_pct": 557.2,
+    "spend": 10397236.91
+   },
+   {
+    "campaign_count": 1432,
+    "clicks": 2291707,
+    "conversion_rate": 4.436,
+    "conversions": 101665,
+    "cpa": 64.0,
+    "cpc": 2.839,
+    "ctr": 2.148,
+    "impressions": 106685871,
+    "name": "Students",
+    "profit": 35832073.52,
+    "revenue": 42338596.94,
+    "roas": 6.507,
+    "roi_pct": 550.7,
+    "spend": 6506523.42
+   },
+   {
+    "campaign_count": 2480,
+    "clicks": 3717117,
+    "conversion_rate": 4.274,
+    "conversions": 158884,
+    "cpa": 67.51,
+    "cpc": 2.886,
+    "ctr": 2.161,
+    "impressions": 172030378,
+    "name": "Business Professionals",
+    "profit": 56344975.48,
+    "revenue": 67071637.59,
+    "roas": 6.253,
+    "roi_pct": 525.3,
+    "spend": 10726662.11
+   },
+   {
+    "campaign_count": 813,
+    "clicks": 1249713,
+    "conversion_rate": 3.593,
+    "conversions": 44903,
+    "cpa": 78.26,
+    "cpc": 2.812,
+    "ctr": 2.193,
+    "impressions": 56978721,
+    "name": "Health & Fitness",
+    "profit": 16172553.24,
+    "revenue": 19686557.01,
+    "roas": 5.602,
+    "roi_pct": 460.2,
+    "spend": 3514003.77
+   }
+  ]
+ },
+ "rank_budget_tier": {
+  "dimension": "budget_tier",
+  "metric": "roas",
+  "results": [
+   {
+    "campaign_count": 2061,
+    "clicks": 6780459,
+    "conversion_rate": 4.311,
+    "conversions": 292328,
+    "cpa": 65.98,
+    "cpc": 2.844,
+    "ctr": 2.283,
+    "impressions": 297028957,
+    "name": "High",
+    "profit": 107625797.62,
+    "revenue": 126912756.32,
+    "roas": 6.58,
+    "roi_pct": 558.0,
+    "spend": 19286958.7
+   },
+   {
+    "campaign_count": 4467,
+    "clicks": 6305796,
+    "conversion_rate": 4.348,
+    "conversions": 274148,
+    "cpa": 66.59,
+    "cpc": 2.895,
+    "ctr": 2.159,
+    "impressions": 292125326,
+    "name": "Medium",
+    "profit": 101105744.94,
+    "revenue": 119362317.16,
+    "roas": 6.538,
+    "roi_pct": 553.8,
+    "spend": 18256572.22
+   },
+   {
+    "campaign_count": 3472,
+    "clicks": 2178106,
+    "conversion_rate": 4.096,
+    "conversions": 89212,
+    "cpa": 66.27,
+    "cpc": 2.714,
+    "ctr": 1.874,
+    "impressions": 116237947,
+    "name": "Low",
+    "profit": 31970502.12,
+    "revenue": 37882632.99,
+    "roas": 6.408,
+    "roi_pct": 540.8,
+    "spend": 5912130.87
+   }
+  ]
+ },
+ "rank_creative_emotion": {
+  "dimension": "creative_emotion",
+  "metric": "roas",
+  "results": [
+   {
+    "campaign_count": 2016,
+    "clicks": 3107325,
+    "conversion_rate": 4.31,
+    "conversions": 133917,
+    "cpa": 65.43,
+    "cpc": 2.82,
+    "ctr": 2.185,
+    "impressions": 142209630,
+    "name": "Trust",
+    "profit": 51540865.29,
+    "revenue": 60302800.23,
+    "roas": 6.882,
+    "roi_pct": 588.2,
+    "spend": 8761934.94
+   },
+   {
+    "campaign_count": 2549,
+    "clicks": 3807581,
+    "conversion_rate": 4.343,
+    "conversions": 165361,
+    "cpa": 66.19,
+    "cpc": 2.875,
+    "ctr": 2.128,
+    "impressions": 178940303,
+    "name": "Joy",
+    "profit": 62517124.15,
+    "revenue": 73462975.94,
+    "roas": 6.711,
+    "roi_pct": 571.1,
+    "spend": 10945851.79
+   },
+   {
+    "campaign_count": 1478,
+    "clicks": 2232265,
+    "conversion_rate": 4.324,
+    "conversions": 96530,
+    "cpa": 68.3,
+    "cpc": 2.954,
+    "ctr": 2.106,
+    "impressions": 106013727,
+    "name": "Curiosity",
+    "profit": 37639886.85,
+    "revenue": 44233193.23,
+    "roas": 6.709,
+    "roi_pct": 570.9,
+    "spend": 6593306.38
+   },
+   {
+    "campaign_count": 2001,
+    "clicks": 3049567,
+    "conversion_rate": 4.54,
+    "conversions": 138437,
+    "cpa": 61.34,
+    "cpc": 2.784,
+    "ctr": 2.25,
+    "impressions": 135552603,
+    "name": "Urgency",
+    "profit": 46045113.88,
+    "revenue": 54536192.77,
+    "roas": 6.423,
+    "roi_pct": 542.3,
+    "spend": 8491078.89
+   },
+   {
+    "campaign_count": 1012,
+    "clicks": 1406935,
+    "conversion_rate": 4.137,
+    "conversions": 58207,
+    "cpa": 71.53,
+    "cpc": 2.959,
+    "ctr": 2.043,
+    "impressions": 68864415,
+    "name": "Fear",
+    "profit": 21074648.67,
+    "revenue": 25238453.17,
+    "roas": 6.061,
+    "roi_pct": 506.1,
+    "spend": 4163804.5
+   },
+   {
+    "campaign_count": 944,
+    "clicks": 1660688,
+    "conversion_rate": 3.808,
+    "conversions": 63236,
+    "cpa": 71.16,
+    "cpc": 2.71,
+    "ctr": 2.25,
+    "impressions": 73811552,
+    "name": "Neutral",
+    "profit": 21884405.84,
+    "revenue": 26384091.13,
+    "roas": 5.864,
+    "roi_pct": 486.4,
+    "spend": 4499685.29
+   }
+  ]
+ },
+ "rank_creative_format": {
+  "dimension": "creative_format",
+  "metric": "roas",
+  "results": [
+   {
+    "campaign_count": 2934,
+    "clicks": 5829398,
+    "conversion_rate": 4.88,
+    "conversions": 284457,
+    "cpa": 58.0,
+    "cpc": 2.83,
+    "ctr": 2.855,
+    "impressions": 204170978,
+    "name": "Video",
+    "profit": 103400276.23,
+    "revenue": 119900080.73,
+    "roas": 7.267,
+    "roi_pct": 626.7,
+    "spend": 16499804.5
+   },
+   {
+    "campaign_count": 712,
+    "clicks": 1225351,
+    "conversion_rate": 3.927,
+    "conversions": 48123,
+    "cpa": 69.97,
+    "cpc": 2.748,
+    "ctr": 2.522,
+    "impressions": 48592533,
+    "name": "Interactive",
+    "profit": 19634052.64,
+    "revenue": 23001425.02,
+    "roas": 6.831,
+    "roi_pct": 583.1,
+    "spend": 3367372.38
+   },
+   {
+    "campaign_count": 3522,
+    "clicks": 4490007,
+    "conversion_rate": 3.972,
+    "conversions": 178338,
+    "cpa": 70.42,
+    "cpc": 2.797,
+    "ctr": 1.756,
+    "impressions": 255638857,
+    "name": "Image",
+    "profit": 66481492.17,
+    "revenue": 79040141.82,
+    "roas": 6.294,
+    "roi_pct": 529.4,
+    "spend": 12558649.65
+   },
+   {
+    "campaign_count": 1531,
+    "clicks": 2437155,
+    "conversion_rate": 3.995,
+    "conversions": 97370,
+    "cpa": 71.32,
+    "cpc": 2.849,
+    "ctr": 2.183,
+    "impressions": 111617283,
+    "name": "Carousel",
+    "profit": 34785582.21,
+    "revenue": 41729915.54,
+    "roas": 6.009,
+    "roi_pct": 500.9,
+    "spend": 6944333.33
+   },
+   {
+    "campaign_count": 492,
+    "clicks": 666038,
+    "conversion_rate": 3.76,
+    "conversions": 25046,
+    "cpa": 85.21,
+    "cpc": 3.204,
+    "ctr": 1.932,
+    "impressions": 34474460,
+    "name": "Story",
+    "profit": 9177272.55,
+    "revenue": 11311370.39,
+    "roas": 5.3,
+    "roi_pct": 430.0,
+    "spend": 2134097.84
+   },
+   {
+    "campaign_count": 809,
+    "clicks": 616412,
+    "conversion_rate": 3.626,
+    "conversions": 22354,
+    "cpa": 87.3,
+    "cpc": 3.166,
+    "ctr": 1.211,
+    "impressions": 50898119,
+    "name": "Text",
+    "profit": 7223368.88,
+    "revenue": 9174772.97,
+    "roas": 4.702,
+    "roi_pct": 370.2,
+    "spend": 1951404.09
+   }
+  ]
+ },
+ "rank_device": {
+  "dimension": "device",
+  "metric": "roas",
+  "results": [
+   {
+    "campaign_count": 3556,
+    "clicks": 5985177,
+    "conversion_rate": 6.676,
+    "conversions": 399599,
+    "cpa": 42.6,
+    "cpc": 2.844,
+    "ctr": 2.496,
+    "impressions": 239807252,
+    "name": "Desktop",
+    "profit": 159966814.32,
+    "revenue": 176989570.57,
+    "roas": 10.397,
+    "roi_pct": 939.7,
+    "spend": 17022756.25
+   },
+   {
+    "campaign_count": 1014,
+    "clicks": 1336257,
+    "conversion_rate": 3.928,
+    "conversions": 52486,
+    "cpa": 74.57,
+    "cpc": 2.929,
+    "ctr": 1.905,
+    "impressions": 70150558,
+    "name": "Tablet",
+    "profit": 16397567.39,
+    "revenue": 20311260.72,
+    "roas": 5.19,
+    "roi_pct": 419.0,
+    "spend": 3913693.33
+   },
+   {
+    "campaign_count": 5430,
+    "clicks": 7942927,
+    "conversion_rate": 2.563,
+    "conversions": 203603,
+    "cpa": 110.6,
+    "cpc": 2.835,
+    "ctr": 2.009,
+    "impressions": 395434420,
+    "name": "Mobile",
+    "profit": 64337662.97,
+    "revenue": 86856875.18,
+    "roas": 3.857,
+    "roi_pct": 285.7,
+    "spend": 22519212.21
+   }
+  ]
+ },
+ "rank_device_count": {
+  "dimension": "device",
+  "metric": "campaign_count",
+  "results": [
+   {
+    "campaign_count": 5430,
+    "clicks": 7942927,
+    "conversion_rate": 2.563,
+    "conversions": 203603,
+    "cpa": 110.6,
+    "cpc": 2.835,
+    "ctr": 2.009,
+    "impressions": 395434420,
+    "name": "Mobile",
+    "profit": 64337662.97,
+    "revenue": 86856875.18,
+    "roas": 3.857,
+    "roi_pct": 285.7,
+    "spend": 22519212.21
+   }
+  ]
+ },
+ "rank_gender": {
+  "dimension": "gender",
+  "metric": "roas",
+  "results": [
+   {
+    "campaign_count": 3518,
+    "clicks": 5450695,
+    "conversion_rate": 4.221,
+    "conversions": 230071,
+    "cpa": 64.62,
+    "cpc": 2.728,
+    "ctr": 2.201,
+    "impressions": 247660424,
+    "name": "Female",
+    "profit": 85751184.67,
+    "revenue": 100618624.21,
+    "roas": 6.768,
+    "roi_pct": 576.8,
+    "spend": 14867439.54
+   },
+   {
+    "campaign_count": 2913,
+    "clicks": 4566915,
+    "conversion_rate": 4.215,
+    "conversions": 192485,
+    "cpa": 67.23,
+    "cpc": 2.833,
+    "ctr": 2.172,
+    "impressions": 210214973,
+    "name": "All",
+    "profit": 73600154.07,
+    "revenue": 86540276.52,
+    "roas": 6.688,
+    "roi_pct": 568.8,
+    "spend": 12940122.45
+   },
+   {
+    "campaign_count": 3569,
+    "clicks": 5246751,
+    "conversion_rate": 4.443,
+    "conversions": 233132,
+    "cpa": 67.12,
+    "cpc": 2.982,
+    "ctr": 2.12,
+    "impressions": 247516833,
+    "name": "Male",
+    "profit": 81350705.94,
+    "revenue": 96998805.74,
+    "roas": 6.199,
+    "roi_pct": 519.9,
+    "spend": 15648099.8
+   }
+  ]
+ },
+ "rank_income_bracket": {
+  "dimension": "income_bracket",
+  "metric": "roas",
+  "results": [
+   {
+    "campaign_count": 1066,
+    "clicks": 1617020,
+    "conversion_rate": 4.379,
+    "conversions": 70811,
+    "cpa": 63.85,
+    "cpc": 2.796,
+    "ctr": 2.3,
+    "impressions": 70313132,
+    "name": ">$200K",
+    "profit": 48072050.32,
+    "revenue": 52593639.86,
+    "roas": 11.632,
+    "roi_pct": 1063.2,
+    "spend": 4521589.54
+   },
+   {
+    "campaign_count": 2588,
+    "clicks": 3854334,
+    "conversion_rate": 4.321,
+    "conversions": 166538,
+    "cpa": 65.3,
+    "cpc": 2.821,
+    "ctr": 2.141,
+    "impressions": 180017151,
+    "name": "$100K-$200K",
+    "profit": 76708535.55,
+    "revenue": 87583132.86,
+    "roas": 8.054,
+    "roi_pct": 705.4,
+    "spend": 10874597.31
+   },
+   {
+    "campaign_count": 3883,
+    "clicks": 5952652,
+    "conversion_rate": 4.256,
+    "conversions": 253368,
+    "cpa": 69.0,
+    "cpc": 2.937,
+    "ctr": 2.13,
+    "impressions": 279474908,
+    "name": "$50K-$100K",
+    "profit": 78919119.8,
+    "revenue": 96401460.95,
+    "roas": 5.514,
+    "roi_pct": 451.4,
+    "spend": 17482341.15
+   },
+   {
+    "campaign_count": 2463,
+    "clicks": 3840355,
+    "conversion_rate": 4.296,
+    "conversions": 164971,
+    "cpa": 64.12,
+    "cpc": 2.754,
+    "ctr": 2.187,
+    "impressions": 175587039,
+    "name": "<$50K",
+    "profit": 37002339.01,
+    "revenue": 47579472.8,
+    "roas": 4.498,
+    "roi_pct": 349.8,
+    "spend": 10577133.79
+   }
+  ]
+ },
+ "rank_objective": {
+  "dimension": "objective",
+  "metric": "roas",
+  "results": [
+   {
+    "campaign_count": 2946,
+    "clicks": 4325852,
+    "conversion_rate": 5.452,
+    "conversions": 235859,
+    "cpa": 53.2,
+    "cpc": 2.9,
+    "ctr": 2.173,
+    "impressions": 199076529,
+    "name": "Conversions",
+    "profit": 87922429.38,
+    "revenue": 100469271.26,
+    "roas": 8.008,
+    "roi_pct": 700.8,
+    "spend": 12546841.88
+   },
+   {
+    "campaign_count": 3563,
+    "clicks": 5323053,
+    "conversion_rate": 4.832,
+    "conversions": 257221,
+    "cpa": 59.76,
+    "cpc": 2.888,
+    "ctr": 2.176,
+    "impressions": 244652066,
+    "name": "Lead Generation",
+    "profit": 94572636.33,
+    "revenue": 109944111.19,
+    "roas": 7.152,
+    "roi_pct": 615.2,
+    "spend": 15371474.86
+   },
+   {
+    "campaign_count": 746,
+    "clicks": 894821,
+    "conversion_rate": 4.131,
+    "conversions": 36966,
+    "cpa": 70.34,
+    "cpc": 2.906,
+    "ctr": 2.264,
+    "impressions": 39525263,
+    "name": "App Installs",
+    "profit": 14815924.36,
+    "revenue": 17416284.83,
+    "roas": 6.698,
+    "roi_pct": 569.8,
+    "spend": 2600360.47
+   },
+   {
+    "campaign_count": 702,
+    "clicks": 1111100,
+    "conversion_rate": 3.248,
+    "conversions": 36091,
+    "cpa": 84.01,
+    "cpc": 2.729,
+    "ctr": 2.136,
+    "impressions": 52026892,
+    "name": "Engagement",
+    "profit": 13212316.93,
+    "revenue": 16244274.07,
+    "roas": 5.358,
+    "roi_pct": 435.8,
+    "spend": 3031957.14
+   },
+   {
+    "campaign_count": 2043,
+    "clicks": 3609535,
+    "conversion_rate": 2.481,
+    "conversions": 89551,
+    "cpa": 110.61,
+    "cpc": 2.744,
+    "ctr": 2.122,
+    "impressions": 170111480,
+    "name": "Brand Awareness",
+    "profit": 30178737.68,
+    "revenue": 40083765.12,
+    "roas": 4.047,
+    "roi_pct": 304.7,
+    "spend": 9905027.44
+   }
+  ]
+ },
+ "rank_objective_cpa_filtered": {
+  "dimension": "objective",
+  "metric": "cpa",
+  "results": [
+   {
+    "campaign_count": 430,
+    "clicks": 432449,
+    "conversion_rate": 6.691,
+    "conversions": 28937,
+    "cpa": 97.64,
+    "cpc": 6.534,
+    "ctr": 1.958,
+    "impressions": 22089413,
+    "name": "Conversions",
+    "profit": 9683185.42,
+    "revenue": 12508597.21,
+    "roas": 4.427,
+    "roi_pct": 342.7,
+    "spend": 2825411.79
+   },
+   {
+    "campaign_count": 102,
+    "clicks": 82799,
+    "conversion_rate": 5.481,
+    "conversions": 4538,
+    "cpa": 120.17,
+    "cpc": 6.586,
+    "ctr": 1.93,
+    "impressions": 4289889,
+    "name": "App Installs",
+    "profit": 1424177.37,
+    "revenue": 1969501.4,
+    "roas": 3.612,
+    "roi_pct": 261.2,
+    "spend": 545324.03
+   },
+   {
+    "campaign_count": 524,
+    "clicks": 570717,
+    "conversion_rate": 5.18,
+    "conversions": 29564,
+    "cpa": 126.09,
+    "cpc": 6.532,
+    "ctr": 1.905,
+    "impressions": 29954415,
+    "name": "Lead Generation",
+    "profit": 8976615.65,
+    "revenue": 12704290.6,
+    "roas": 3.408,
+    "roi_pct": 240.8,
+    "spend": 3727674.95
+   },
+   {
+    "campaign_count": 104,
+    "clicks": 116382,
+    "conversion_rate": 3.841,
+    "conversions": 4470,
+    "cpa": 167.8,
+    "cpc": 6.445,
+    "ctr": 1.953,
+    "impressions": 5958905,
+    "name": "Engagement",
+    "profit": 778128.58,
+    "revenue": 1528215.79,
+    "roas": 2.037,
+    "roi_pct": 103.7,
+    "spend": 750087.21
+   },
+   {
+    "campaign_count": 308,
+    "clicks": 337042,
+    "conversion_rate": 2.782,
+    "conversions": 9378,
+    "cpa": 238.04,
+    "cpc": 6.623,
+    "ctr": 1.91,
+    "impressions": 17644063,
+    "name": "Brand Awareness",
+    "profit": 2372714.72,
+    "revenue": 4605089.35,
+    "roas": 2.063,
+    "roi_pct": 106.3,
+    "spend": 2232374.63
+   }
+  ]
+ },
+ "rank_operating_system": {
+  "dimension": "operating_system",
+  "metric": "roas",
+  "results": [
+   {
+    "campaign_count": 2550,
+    "clicks": 4205474,
+    "conversion_rate": 4.538,
+    "conversions": 190844,
+    "cpa": 62.32,
+    "cpc": 2.828,
+    "ctr": 2.248,
+    "impressions": 187108797,
+    "name": "iOS",
+    "profit": 75485855.48,
+    "revenue": 87379796.47,
+    "roas": 7.347,
+    "roi_pct": 634.7,
+    "spend": 11893940.99
+   },
+   {
+    "campaign_count": 479,
+    "clicks": 728763,
+    "conversion_rate": 3.875,
+    "conversions": 28243,
+    "cpa": 70.71,
+    "cpc": 2.74,
+    "ctr": 2.083,
+    "impressions": 34978495,
+    "name": "Other",
+    "profit": 11072670.91,
+    "revenue": 13069704.12,
+    "roas": 6.545,
+    "roi_pct": 554.5,
+    "spend": 1997033.21
+   },
+   {
+    "campaign_count": 2486,
+    "clicks": 3659763,
+    "conversion_rate": 4.36,
+    "conversions": 159582,
+    "cpa": 65.96,
+    "cpc": 2.876,
+    "ctr": 2.1,
+    "impressions": 174262357,
+    "name": "Windows",
+    "profit": 57945796.9,
+    "revenue": 68472240.18,
+    "roas": 6.505,
+    "roi_pct": 550.5,
+    "spend": 10526443.28
+   },
+   {
+    "campaign_count": 1501,
+    "clicks": 2274215,
+    "conversion_rate": 4.528,
+    "conversions": 102986,
+    "cpa": 63.38,
+    "cpc": 2.87,
+    "ctr": 2.161,
+    "impressions": 105252018,
+    "name": "macOS",
+    "profit": 35880052.07,
+    "revenue": 42407598.13,
+    "roas": 6.497,
+    "roi_pct": 549.7,
+    "spend": 6527546.06
+   },
+   {
+    "campaign_count": 2984,
+    "clicks": 4396146,
+    "conversion_rate": 3.959,
+    "conversions": 174033,
+    "cpa": 71.89,
+    "cpc": 2.846,
+    "ctr": 2.157,
+    "impressions": 203790563,
+    "name": "Android",
+    "profit": 60317669.32,
+    "revenue": 72828367.57,
+    "roas": 5.821,
+    "roi_pct": 482.1,
+    "spend": 12510698.25
+   }
+  ]
+ },
+ "rank_placement": {
+  "dimension": "placement",
+  "metric": "roas",
+  "results": [
+   {
+    "campaign_count": 494,
+    "clicks": 804427,
+    "conversion_rate": 5.166,
+    "conversions": 41555,
+    "cpa": 59.37,
+    "cpc": 3.067,
+    "ctr": 2.386,
+    "impressions": 33711583,
+    "name": "Sidebar",
+    "profit": 17246707.88,
+    "revenue": 19713684.3,
+    "roas": 7.991,
+    "roi_pct": 699.1,
+    "spend": 2466976.42
+   },
+   {
+    "campaign_count": 1995,
+    "clicks": 3273002,
+    "conversion_rate": 4.419,
+    "conversions": 144650,
+    "cpa": 63.12,
+    "cpc": 2.79,
+    "ctr": 2.166,
+    "impressions": 151105973,
+    "name": "Stories",
+    "profit": 54765119.79,
+    "revenue": 63895835.92,
+    "roas": 6.998,
+    "roi_pct": 599.8,
+    "spend": 9130716.13
+   },
+   {
+    "campaign_count": 3491,
+    "clicks": 5237427,
+    "conversion_rate": 4.2,
+    "conversions": 219990,
+    "cpa": 65.59,
+    "cpc": 2.755,
+    "ctr": 2.162,
+    "impressions": 242284972,
+    "name": "Feed",
+    "profit": 79940815.05,
+    "revenue": 94369428.33,
+    "roas": 6.54,
+    "roi_pct": 554.0,
+    "spend": 14428613.28
+   },
+   {
+    "campaign_count": 1189,
+    "clicks": 1671506,
+    "conversion_rate": 4.102,
+    "conversions": 68561,
+    "cpa": 72.51,
+    "cpc": 2.974,
+    "ctr": 2.104,
+    "impressions": 79449142,
+    "name": "Display Network",
+    "profit": 26102600.57,
+    "revenue": 31073780.68,
+    "roas": 6.251,
+    "roi_pct": 525.1,
+    "spend": 4971180.11
+   },
+   {
+    "campaign_count": 2067,
+    "clicks": 3128968,
+    "conversion_rate": 4.33,
+    "conversions": 135491,
+    "cpa": 68.21,
+    "cpc": 2.954,
+    "ctr": 2.128,
+    "impressions": 147030480,
+    "name": "Search",
+    "profit": 46871282.31,
+    "revenue": 56113251.4,
+    "roas": 6.072,
+    "roi_pct": 507.2,
+    "spend": 9241969.09
+   },
+   {
+    "campaign_count": 764,
+    "clicks": 1149031,
+    "conversion_rate": 3.955,
+    "conversions": 45441,
+    "cpa": 70.78,
+    "cpc": 2.799,
+    "ctr": 2.218,
+    "impressions": 51810080,
+    "name": "In-Stream Video",
+    "profit": 15775519.08,
+    "revenue": 18991725.84,
+    "roas": 5.905,
+    "roi_pct": 490.5,
+    "spend": 3216206.76
+   }
+  ]
+ },
+ "rank_platform": {
+  "dimension": "platform",
+  "metric": "roas",
+  "results": [
+   {
+    "campaign_count": 1213,
+    "clicks": 2375647,
+    "conversion_rate": 3.439,
+    "conversions": 81687,
+    "cpa": 37.6,
+    "cpc": 1.293,
+    "ctr": 2.373,
+    "impressions": 100123347,
+    "name": "TikTok",
+    "profit": 31278715.96,
+    "revenue": 34349996.88,
+    "roas": 11.184,
+    "roi_pct": 1018.4,
+    "spend": 3071280.92
+   },
+   {
+    "campaign_count": 2527,
+    "clicks": 3890608,
+    "conversion_rate": 4.26,
+    "conversions": 165733,
+    "cpa": 41.12,
+    "cpc": 1.752,
+    "ctr": 2.36,
+    "impressions": 164867991,
+    "name": "Facebook",
+    "profit": 63970995.68,
+    "revenue": 70786373.13,
+    "roas": 10.386,
+    "roi_pct": 938.6,
+    "spend": 6815377.45
+   },
+   {
+    "campaign_count": 830,
+    "clicks": 1389130,
+    "conversion_rate": 4.154,
+    "conversions": 57704,
+    "cpa": 51.42,
+    "cpc": 2.136,
+    "ctr": 2.159,
+    "impressions": 64337284,
+    "name": "Instagram",
+    "profit": 24074175.29,
+    "revenue": 27041357.5,
+    "roas": 9.113,
+    "roi_pct": 811.3,
+    "spend": 2967182.21
+   },
+   {
+    "campaign_count": 1029,
+    "clicks": 1603966,
+    "conversion_rate": 3.163,
+    "conversions": 50731,
+    "cpa": 49.56,
+    "cpc": 1.567,
+    "ctr": 2.42,
+    "impressions": 66277025,
+    "name": "Twitter",
+    "profit": 18301381.57,
+    "revenue": 20815486.09,
+    "roas": 8.279,
+    "roi_pct": 727.9,
+    "spend": 2514104.52
+   },
+   {
+    "campaign_count": 2933,
+    "clicks": 4465621,
+    "conversion_rate": 4.992,
+    "conversions": 222946,
+    "cpa": 80.77,
+    "cpc": 4.032,
+    "ctr": 1.943,
+    "impressions": 229849898,
+    "name": "Google Ads",
+    "profit": 79841954.44,
+    "revenue": 97848798.52,
+    "roas": 5.434,
+    "roi_pct": 443.4,
+    "spend": 18006844.08
+   },
+   {
+    "campaign_count": 1468,
+    "clicks": 1539389,
+    "conversion_rate": 4.995,
+    "conversions": 76887,
+    "cpa": 131.11,
+    "cpc": 6.549,
+    "ctr": 1.926,
+    "impressions": 79936685,
+    "name": "LinkedIn",
+    "profit": 23234821.74,
+    "revenue": 33315694.35,
+    "roas": 3.305,
+    "roi_pct": 230.5,
+    "spend": 10080872.61
+   }
+  ]
+ },
+ "rank_platform_revenue_asc": {
+  "dimension": "platform",
+  "metric": "revenue",
+  "results": [
+   {
+    "campaign_count": 1029,
+    "clicks": 1603966,
+    "conversion_rate": 3.163,
+    "conversions": 50731,
+    "cpa": 49.56,
+    "cpc": 1.567,
+    "ctr": 2.42,
+    "impressions": 66277025,
+    "name": "Twitter",
+    "profit": 18301381.57,
+    "revenue": 20815486.09,
+    "roas": 8.279,
+    "roi_pct": 727.9,
+    "spend": 2514104.52
+   },
+   {
+    "campaign_count": 830,
+    "clicks": 1389130,
+    "conversion_rate": 4.154,
+    "conversions": 57704,
+    "cpa": 51.42,
+    "cpc": 2.136,
+    "ctr": 2.159,
+    "impressions": 64337284,
+    "name": "Instagram",
+    "profit": 24074175.29,
+    "revenue": 27041357.5,
+    "roas": 9.113,
+    "roi_pct": 811.3,
+    "spend": 2967182.21
+   },
+   {
+    "campaign_count": 1468,
+    "clicks": 1539389,
+    "conversion_rate": 4.995,
+    "conversions": 76887,
+    "cpa": 131.11,
+    "cpc": 6.549,
+    "ctr": 1.926,
+    "impressions": 79936685,
+    "name": "LinkedIn",
+    "profit": 23234821.74,
+    "revenue": 33315694.35,
+    "roas": 3.305,
+    "roi_pct": 230.5,
+    "spend": 10080872.61
+   },
+   {
+    "campaign_count": 1213,
+    "clicks": 2375647,
+    "conversion_rate": 3.439,
+    "conversions": 81687,
+    "cpa": 37.6,
+    "cpc": 1.293,
+    "ctr": 2.373,
+    "impressions": 100123347,
+    "name": "TikTok",
+    "profit": 31278715.96,
+    "revenue": 34349996.88,
+    "roas": 11.184,
+    "roi_pct": 1018.4,
+    "spend": 3071280.92
+   },
+   {
+    "campaign_count": 2527,
+    "clicks": 3890608,
+    "conversion_rate": 4.26,
+    "conversions": 165733,
+    "cpa": 41.12,
+    "cpc": 1.752,
+    "ctr": 2.36,
+    "impressions": 164867991,
+    "name": "Facebook",
+    "profit": 63970995.68,
+    "revenue": 70786373.13,
+    "roas": 10.386,
+    "roi_pct": 938.6,
+    "spend": 6815377.45
+   },
+   {
+    "campaign_count": 2933,
+    "clicks": 4465621,
+    "conversion_rate": 4.992,
+    "conversions": 222946,
+    "cpa": 80.77,
+    "cpc": 4.032,
+    "ctr": 1.943,
+    "impressions": 229849898,
+    "name": "Google Ads",
+    "profit": 79841954.44,
+    "revenue": 97848798.52,
+    "roas": 5.434,
+    "roi_pct": 443.4,
+    "spend": 18006844.08
+   }
+  ]
+ },
+ "rank_platform_top1": {
+  "dimension": "platform",
+  "metric": "roas",
+  "results": [
+   {
+    "campaign_count": 1213,
+    "clicks": 2375647,
+    "conversion_rate": 3.439,
+    "conversions": 81687,
+    "cpa": 37.6,
+    "cpc": 1.293,
+    "ctr": 2.373,
+    "impressions": 100123347,
+    "name": "TikTok",
+    "profit": 31278715.96,
+    "revenue": 34349996.88,
+    "roas": 11.184,
+    "roi_pct": 1018.4,
+    "spend": 3071280.92
+   }
+  ]
+ },
+ "rank_retargeting": {
+  "dimension": "retargeting",
+  "metric": "roas",
+  "results": [
+   {
+    "campaign_count": 2470,
+    "clicks": 3928612,
+    "conversion_rate": 5.678,
+    "conversions": 223074,
+    "cpa": 48.26,
+    "cpc": 2.74,
+    "ctr": 2.373,
+    "impressions": 165528864,
+    "name": "True",
+    "profit": 91488962.5,
+    "revenue": 102254922.48,
+    "roas": 9.498,
+    "roi_pct": 849.8,
+    "spend": 10765959.98
+   },
+   {
+    "campaign_count": 7530,
+    "clicks": 11335749,
+    "conversion_rate": 3.816,
+    "conversions": 432614,
+    "cpa": 75.56,
+    "cpc": 2.884,
+    "ctr": 2.1,
+    "impressions": 539863366,
+    "name": "False",
+    "profit": 149213082.18,
+    "revenue": 181902783.99,
+    "roas": 5.565,
+    "roi_pct": 456.5,
+    "spend": 32689701.81
+   }
+  ]
+ },
+ "rank_unknown_dimension": {
+  "error": "Unknown dimension 'country'. Valid dimensions: ['platform', 'objective', 'device', 'age_group', 'gender', 'vertical', 'budget_tier', 'creative_format', 'creative_emotion', 'placement', 'income_bracket', 'audience_interest', 'operating_system', 'retargeting']"
+ },
+ "rank_unknown_metric": {
+  "dimension": "platform",
+  "metric": "roas",
+  "results": [
+   {
+    "campaign_count": 1213,
+    "clicks": 2375647,
+    "conversion_rate": 3.439,
+    "conversions": 81687,
+    "cpa": 37.6,
+    "cpc": 1.293,
+    "ctr": 2.373,
+    "impressions": 100123347,
+    "name": "TikTok",
+    "profit": 31278715.96,
+    "revenue": 34349996.88,
+    "roas": 11.184,
+    "roi_pct": 1018.4,
+    "spend": 3071280.92
+   },
+   {
+    "campaign_count": 2527,
+    "clicks": 3890608,
+    "conversion_rate": 4.26,
+    "conversions": 165733,
+    "cpa": 41.12,
+    "cpc": 1.752,
+    "ctr": 2.36,
+    "impressions": 164867991,
+    "name": "Facebook",
+    "profit": 63970995.68,
+    "revenue": 70786373.13,
+    "roas": 10.386,
+    "roi_pct": 938.6,
+    "spend": 6815377.45
+   },
+   {
+    "campaign_count": 830,
+    "clicks": 1389130,
+    "conversion_rate": 4.154,
+    "conversions": 57704,
+    "cpa": 51.42,
+    "cpc": 2.136,
+    "ctr": 2.159,
+    "impressions": 64337284,
+    "name": "Instagram",
+    "profit": 24074175.29,
+    "revenue": 27041357.5,
+    "roas": 9.113,
+    "roi_pct": 811.3,
+    "spend": 2967182.21
+   },
+   {
+    "campaign_count": 1029,
+    "clicks": 1603966,
+    "conversion_rate": 3.163,
+    "conversions": 50731,
+    "cpa": 49.56,
+    "cpc": 1.567,
+    "ctr": 2.42,
+    "impressions": 66277025,
+    "name": "Twitter",
+    "profit": 18301381.57,
+    "revenue": 20815486.09,
+    "roas": 8.279,
+    "roi_pct": 727.9,
+    "spend": 2514104.52
+   },
+   {
+    "campaign_count": 2933,
+    "clicks": 4465621,
+    "conversion_rate": 4.992,
+    "conversions": 222946,
+    "cpa": 80.77,
+    "cpc": 4.032,
+    "ctr": 1.943,
+    "impressions": 229849898,
+    "name": "Google Ads",
+    "profit": 79841954.44,
+    "revenue": 97848798.52,
+    "roas": 5.434,
+    "roi_pct": 443.4,
+    "spend": 18006844.08
+   },
+   {
+    "campaign_count": 1468,
+    "clicks": 1539389,
+    "conversion_rate": 4.995,
+    "conversions": 76887,
+    "cpa": 131.11,
+    "cpc": 6.549,
+    "ctr": 1.926,
+    "impressions": 79936685,
+    "name": "LinkedIn",
+    "profit": 23234821.74,
+    "revenue": 33315694.35,
+    "roas": 3.305,
+    "roi_pct": 230.5,
+    "spend": 10080872.61
+   }
+  ]
+ },
+ "rank_vertical": {
+  "dimension": "vertical",
+  "metric": "roas",
+  "results": [
+   {
+    "campaign_count": 1430,
+    "clicks": 2231177,
+    "conversion_rate": 4.732,
+    "conversions": 105576,
+    "cpa": 61.76,
+    "cpc": 2.922,
+    "ctr": 2.337,
+    "impressions": 95470603,
+    "name": "Finance",
+    "profit": 65593941.36,
+    "revenue": 72113926.98,
+    "roas": 11.06,
+    "roi_pct": 1006.0,
+    "spend": 6519985.62
+   },
+   {
+    "campaign_count": 2090,
+    "clicks": 3272137,
+    "conversion_rate": 3.606,
+    "conversions": 117992,
+    "cpa": 79.5,
+    "cpc": 2.867,
+    "ctr": 2.04,
+    "impressions": 160423488,
+    "name": "Healthcare",
+    "profit": 56445203.88,
+    "revenue": 65825056.84,
+    "roas": 7.018,
+    "roi_pct": 601.8,
+    "spend": 9379852.96
+   },
+   {
+    "campaign_count": 2490,
+    "clicks": 3368301,
+    "conversion_rate": 3.833,
+    "conversions": 129120,
+    "cpa": 75.56,
+    "cpc": 2.897,
+    "ctr": 1.967,
+    "impressions": 171222631,
+    "name": "SaaS",
+    "profit": 52685553.17,
+    "revenue": 62441906.36,
+    "roas": 6.4,
+    "roi_pct": 540.0,
+    "spend": 9756353.19
+   },
+   {
+    "campaign_count": 984,
+    "clicks": 1544709,
+    "conversion_rate": 4.521,
+    "conversions": 69829,
+    "cpa": 62.75,
+    "cpc": 2.836,
+    "ctr": 2.334,
+    "impressions": 66182739,
+    "name": "Education",
+    "profit": 19518782.71,
+    "revenue": 23900249.8,
+    "roas": 5.455,
+    "roi_pct": 445.5,
+    "spend": 4381467.09
+   },
+   {
+    "campaign_count": 2507,
+    "clicks": 4076616,
+    "conversion_rate": 5.039,
+    "conversions": 205423,
+    "cpa": 54.68,
+    "cpc": 2.755,
+    "ctr": 2.306,
+    "impressions": 176792164,
+    "name": "E-commerce",
+    "profit": 44111384.05,
+    "revenue": 55343921.15,
+    "roas": 4.927,
+    "roi_pct": 392.7,
+    "spend": 11232537.1
+   },
+   {
+    "campaign_count": 499,
+    "clicks": 771421,
+    "conversion_rate": 3.597,
+    "conversions": 27748,
+    "cpa": 78.76,
+    "cpc": 2.833,
+    "ctr": 2.185,
+    "impressions": 35300605,
+    "name": "Gaming",
+    "profit": 2347179.51,
+    "revenue": 4532645.34,
+    "roas": 2.074,
+    "roi_pct": 107.4,
+    "spend": 2185465.83
+   }
+  ]
+ },
+ "share_filtered": {
+  "dimension": "device",
+  "entity_value": 7343239.77,
+  "metric": "revenue",
+  "name": "Mobile",
+  "share_pct": 27.16,
+  "total_value": 27041357.5
+ },
+ "share_tiktok_spend": {
+  "dimension": "platform",
+  "entity_value": 3071280.92,
+  "metric": "spend",
+  "name": "TikTok",
+  "share_pct": 7.07,
+  "total_value": 43455661.79
+ },
+ "stats_all": {
+  "clicks": {
+   "max": 40000.0,
+   "mean": 1526.44,
+   "median": 718.0,
+   "min": 10.0,
+   "p25": 290.0,
+   "p75": 1746.0
+  },
+  "conversion_rate": {
+   "max": 25.0,
+   "mean": 3.64,
+   "median": 2.17,
+   "min": 0.0,
+   "p25": 1.0,
+   "p75": 4.49
+  },
+  "conversions": {
+   "max": 5384.0,
+   "mean": 65.57,
+   "median": 16.0,
+   "min": 0.0,
+   "p25": 5.0,
+   "p75": 55.0
+  },
+  "cpa": {
+   "max": 6379.94,
+   "mean": 190.9,
+   "median": 99.46,
+   "min": 0.0,
+   "p25": 40.64,
+   "p75": 225.46
+  },
+  "ctr": {
+   "max": 8.0,
+   "mean": 2.31,
+   "median": 1.92,
+   "min": 0.1,
+   "p25": 1.17,
+   "p75": 3.02
+  },
+  "nonsense": {
+   "error": "field not available"
+  },
+  "profit": {
+   "max": 2750397.93,
+   "mean": 24070.2,
+   "median": 3302.53,
+   "min": -36939.84,
+   "p25": 209.48,
+   "p75": 16641.88
+  },
+  "revenue": {
+   "max": 2800397.43,
+   "mean": 28415.77,
+   "median": 6099.24,
+   "min": 0.0,
+   "p25": 1608.91,
+   "p75": 22165.82
+  },
+  "roas": {
+   "max": 487.3,
+   "mean": 7.52,
+   "median": 3.15,
+   "min": 0.0,
+   "p25": 1.2,
+   "p75": 7.95
+  },
+  "spend": {
+   "max": 49999.68,
+   "mean": 4345.57,
+   "median": 1895.67,
+   "min": 8.69,
+   "p25": 666.31,
+   "p75": 4996.16
+  }
+ },
+ "stats_filtered": {
+  "roas": {
+   "max": 50.77,
+   "mean": 10.14,
+   "median": 5.15,
+   "min": 0.41,
+   "p25": 2.8,
+   "p75": 12.02
+  },
+  "spend": {
+   "max": 24332.34,
+   "mean": 5150.29,
+   "median": 3434.68,
+   "min": 131.4,
+   "p25": 1292.75,
+   "p75": 8659.38
+  }
+ },
+ "totals": {
+  "campaign_count": 10000,
+  "clicks": 15264361,
+  "conversion_rate": 4.296,
+  "conversions": 655688,
+  "cpa": 66.27,
+  "cpc": 2.847,
+  "ctr": 2.164,
+  "impressions": 705392230,
+  "profit": 240702044.68,
+  "revenue": 284157706.47,
+  "roas": 6.539,
+  "roi_pct": 553.9,
+  "spend": 43455661.79
+ },
+ "totals_all_sentinels": {
+  "campaign_count": 10000,
+  "clicks": 15264361,
+  "conversion_rate": 4.296,
+  "conversions": 655688,
+  "cpa": 66.27,
+  "cpc": 2.847,
+  "ctr": 2.164,
+  "impressions": 705392230,
+  "profit": 240702044.68,
+  "revenue": 284157706.47,
+  "roas": 6.539,
+  "roi_pct": 553.9,
+  "spend": 43455661.79
+ },
+ "totals_bool_value": {
+  "campaign_count": 0,
+  "clicks": 0,
+  "conversion_rate": null,
+  "conversions": 0,
+  "cpa": null,
+  "cpc": null,
+  "ctr": null,
+  "impressions": 0,
+  "profit": 0,
+  "revenue": 0,
+  "roas": null,
+  "roi_pct": null,
+  "spend": 0
+ },
+ "totals_budget": {
+  "campaign_count": 2061,
+  "clicks": 6780459,
+  "conversion_rate": 4.311,
+  "conversions": 292328,
+  "cpa": 65.98,
+  "cpc": 2.844,
+  "ctr": 2.283,
+  "impressions": 297028957,
+  "profit": 107625797.62,
+  "revenue": 126912756.32,
+  "roas": 6.58,
+  "roi_pct": 558.0,
+  "spend": 19286958.7
+ },
+ "totals_chart_filters": {
+  "campaign_count": 236,
+  "clicks": 458648,
+  "conversion_rate": 6.507,
+  "conversions": 29844,
+  "cpa": 39.66,
+  "cpc": 2.581,
+  "ctr": 3.068,
+  "impressions": 14949519,
+  "profit": 11570643.2,
+  "revenue": 12754287.88,
+  "roas": 10.775,
+  "roi_pct": 977.5,
+  "spend": 1183644.68
+ },
+ "totals_cold": {
+  "campaign_count": 374,
+  "clicks": 562038,
+  "conversion_rate": 3.397,
+  "conversions": 19093,
+  "cpa": 87.73,
+  "cpc": 2.98,
+  "ctr": 2.126,
+  "impressions": 26435933,
+  "profit": 1615396.9,
+  "revenue": 3290490.33,
+  "roas": 1.964,
+  "roi_pct": 96.4,
+  "spend": 1675093.43
+ },
+ "totals_empty": {
+  "campaign_count": 0,
+  "clicks": 0,
+  "conversion_rate": null,
+  "conversions": 0,
+  "cpa": null,
+  "cpc": null,
+  "ctr": null,
+  "impressions": 0,
+  "profit": 0,
+  "revenue": 0,
+  "roas": null,
+  "roi_pct": null,
+  "spend": 0
+ },
+ "totals_multi": {
+  "campaign_count": 67,
+  "clicks": 233728,
+  "conversion_rate": 2.765,
+  "conversions": 6462,
+  "cpa": 53.4,
+  "cpc": 1.476,
+  "ctr": 2.459,
+  "impressions": 9505015,
+  "profit": 2754393.11,
+  "revenue": 3099462.74,
+  "roas": 8.982,
+  "roi_pct": 798.2,
+  "spend": 345069.63
+ },
+ "totals_platform": {
+  "campaign_count": 1213,
+  "clicks": 2375647,
+  "conversion_rate": 3.439,
+  "conversions": 81687,
+  "cpa": 37.6,
+  "cpc": 1.293,
+  "ctr": 2.373,
+  "impressions": 100123347,
+  "profit": 31278715.96,
+  "revenue": 34349996.88,
+  "roas": 11.184,
+  "roi_pct": 1018.4,
+  "spend": 3071280.92
+ },
+ "trend_conversions": {
+  "metric": "conversions",
+  "series": [
+   {
+    "month": "2024-01",
+    "value": 23217.0
+   },
+   {
+    "month": "2024-02",
+    "value": 23487.0
+   },
+   {
+    "month": "2024-03",
+    "value": 19868.0
+   },
+   {
+    "month": "2024-04",
+    "value": 25344.0
+   },
+   {
+    "month": "2024-05",
+    "value": 20700.0
+   },
+   {
+    "month": "2024-06",
+    "value": 18371.0
+   },
+   {
+    "month": "2024-07",
+    "value": 19254.0
+   },
+   {
+    "month": "2024-08",
+    "value": 19785.0
+   },
+   {
+    "month": "2024-09",
+    "value": 22115.0
+   },
+   {
+    "month": "2024-10",
+    "value": 36233.0
+   },
+   {
+    "month": "2024-11",
+    "value": 36291.0
+   },
+   {
+    "month": "2024-12",
+    "value": 53005.0
+   },
+   {
+    "month": "2025-01",
+    "value": 25715.0
+   },
+   {
+    "month": "2025-02",
+    "value": 20453.0
+   },
+   {
+    "month": "2025-03",
+    "value": 22173.0
+   },
+   {
+    "month": "2025-04",
+    "value": 20305.0
+   },
+   {
+    "month": "2025-05",
+    "value": 20643.0
+   },
+   {
+    "month": "2025-06",
+    "value": 25677.0
+   },
+   {
+    "month": "2025-07",
+    "value": 16906.0
+   },
+   {
+    "month": "2025-08",
+    "value": 23460.0
+   },
+   {
+    "month": "2025-09",
+    "value": 18149.0
+   },
+   {
+    "month": "2025-10",
+    "value": 39952.0
+   },
+   {
+    "month": "2025-11",
+    "value": 39548.0
+   },
+   {
+    "month": "2025-12",
+    "value": 42411.0
+   },
+   {
+    "month": "2026-01",
+    "value": 22626.0
+   }
+  ]
+ },
+ "trend_filtered": {
+  "metric": "revenue",
+  "series": [
+   {
+    "month": "2024-01",
+    "value": 246110.86
+   },
+   {
+    "month": "2024-02",
+    "value": 292691.2
+   },
+   {
+    "month": "2024-03",
+    "value": 94622.36
+   },
+   {
+    "month": "2024-04",
+    "value": 129923.95
+   },
+   {
+    "month": "2024-06",
+    "value": 8211.33
+   },
+   {
+    "month": "2024-07",
+    "value": 110699.06
+   },
+   {
+    "month": "2024-08",
+    "value": 42551.12
+   },
+   {
+    "month": "2024-09",
+    "value": 483780.28
+   },
+   {
+    "month": "2024-10",
+    "value": 339044.03
+   },
+   {
+    "month": "2024-11",
+    "value": 26068.78
+   },
+   {
+    "month": "2024-12",
+    "value": 149178.6
+   },
+   {
+    "month": "2025-01",
+    "value": 60026.72
+   },
+   {
+    "month": "2025-02",
+    "value": 481728.4
+   },
+   {
+    "month": "2025-03",
+    "value": 52959.82
+   },
+   {
+    "month": "2025-04",
+    "value": 77717.67
+   },
+   {
+    "month": "2025-06",
+    "value": 117023.64
+   },
+   {
+    "month": "2025-07",
+    "value": 2934.16
+   },
+   {
+    "month": "2025-08",
+    "value": 56276.19
+   },
+   {
+    "month": "2025-10",
+    "value": 140440.82
+   },
+   {
+    "month": "2025-12",
+    "value": 87597.15
+   },
+   {
+    "month": "2026-01",
+    "value": 99876.6
+   }
+  ]
+ },
+ "trend_profit": {
+  "metric": "profit",
+  "series": [
+   {
+    "month": "2024-01",
+    "value": 7821533.57
+   },
+   {
+    "month": "2024-02",
+    "value": 10532231.48
+   },
+   {
+    "month": "2024-03",
+    "value": 7320860.89
+   },
+   {
+    "month": "2024-04",
+    "value": 7741384.64
+   },
+   {
+    "month": "2024-05",
+    "value": 8198683.85
+   },
+   {
+    "month": "2024-06",
+    "value": 6341121.78
+   },
+   {
+    "month": "2024-07",
+    "value": 7893037.48
+   },
+   {
+    "month": "2024-08",
+    "value": 6813909.7
+   },
+   {
+    "month": "2024-09",
+    "value": 10206951.34
+   },
+   {
+    "month": "2024-10",
+    "value": 12969810.58
+   },
+   {
+    "month": "2024-11",
+    "value": 11905979.18
+   },
+   {
+    "month": "2024-12",
+    "value": 18444187.24
+   },
+   {
+    "month": "2025-01",
+    "value": 11975457.62
+   },
+   {
+    "month": "2025-02",
+    "value": 8386125.98
+   },
+   {
+    "month": "2025-03",
+    "value": 9001940.41
+   },
+   {
+    "month": "2025-04",
+    "value": 7317270.93
+   },
+   {
+    "month": "2025-05",
+    "value": 7514617.11
+   },
+   {
+    "month": "2025-06",
+    "value": 8933686.35
+   },
+   {
+    "month": "2025-07",
+    "value": 5882912.83
+   },
+   {
+    "month": "2025-08",
+    "value": 7447896.38
+   },
+   {
+    "month": "2025-09",
+    "value": 6677307.23
+   },
+   {
+    "month": "2025-10",
+    "value": 13639547.84
+   },
+   {
+    "month": "2025-11",
+    "value": 13932671.14
+   },
+   {
+    "month": "2025-12",
+    "value": 14712456.58
+   },
+   {
+    "month": "2026-01",
+    "value": 9090462.55
+   }
+  ]
+ },
+ "trend_revenue": {
+  "metric": "revenue",
+  "series": [
+   {
+    "month": "2024-01",
+    "value": 9492363.16
+   },
+   {
+    "month": "2024-02",
+    "value": 12136429.82
+   },
+   {
+    "month": "2024-03",
+    "value": 9098779.09
+   },
+   {
+    "month": "2024-04",
+    "value": 9615388.17
+   },
+   {
+    "month": "2024-05",
+    "value": 9936720.4
+   },
+   {
+    "month": "2024-06",
+    "value": 7941396.61
+   },
+   {
+    "month": "2024-07",
+    "value": 9484439.25
+   },
+   {
+    "month": "2024-08",
+    "value": 8587135.01
+   },
+   {
+    "month": "2024-09",
+    "value": 11845283.77
+   },
+   {
+    "month": "2024-10",
+    "value": 14902956.72
+   },
+   {
+    "month": "2024-11",
+    "value": 13471468.5
+   },
+   {
+    "month": "2024-12",
+    "value": 21100585.27
+   },
+   {
+    "month": "2025-01",
+    "value": 13707323.1
+   },
+   {
+    "month": "2025-02",
+    "value": 9839265.59
+   },
+   {
+    "month": "2025-03",
+    "value": 10745609.09
+   },
+   {
+    "month": "2025-04",
+    "value": 8914240.71
+   },
+   {
+    "month": "2025-05",
+    "value": 9001157.85
+   },
+   {
+    "month": "2025-06",
+    "value": 10527411.67
+   },
+   {
+    "month": "2025-07",
+    "value": 7510123.84
+   },
+   {
+    "month": "2025-08",
+    "value": 9223077.55
+   },
+   {
+    "month": "2025-09",
+    "value": 8269634.62
+   },
+   {
+    "month": "2025-10",
+    "value": 15533025.41
+   },
+   {
+    "month": "2025-11",
+    "value": 15806957.74
+   },
+   {
+    "month": "2025-12",
+    "value": 16539059.65
+   },
+   {
+    "month": "2026-01",
+    "value": 10927873.88
+   }
+  ]
+ },
+ "trend_spend": {
+  "metric": "spend",
+  "series": [
+   {
+    "month": "2024-01",
+    "value": 1670829.59
+   },
+   {
+    "month": "2024-02",
+    "value": 1604198.34
+   },
+   {
+    "month": "2024-03",
+    "value": 1777918.2
+   },
+   {
+    "month": "2024-04",
+    "value": 1874003.53
+   },
+   {
+    "month": "2024-05",
+    "value": 1738036.55
+   },
+   {
+    "month": "2024-06",
+    "value": 1600274.83
+   },
+   {
+    "month": "2024-07",
+    "value": 1591401.77
+   },
+   {
+    "month": "2024-08",
+    "value": 1773225.31
+   },
+   {
+    "month": "2024-09",
+    "value": 1638332.43
+   },
+   {
+    "month": "2024-10",
+    "value": 1933146.14
+   },
+   {
+    "month": "2024-11",
+    "value": 1565489.32
+   },
+   {
+    "month": "2024-12",
+    "value": 2656398.03
+   },
+   {
+    "month": "2025-01",
+    "value": 1731865.48
+   },
+   {
+    "month": "2025-02",
+    "value": 1453139.61
+   },
+   {
+    "month": "2025-03",
+    "value": 1743668.68
+   },
+   {
+    "month": "2025-04",
+    "value": 1596969.78
+   },
+   {
+    "month": "2025-05",
+    "value": 1486540.74
+   },
+   {
+    "month": "2025-06",
+    "value": 1593725.32
+   },
+   {
+    "month": "2025-07",
+    "value": 1627211.01
+   },
+   {
+    "month": "2025-08",
+    "value": 1775181.17
+   },
+   {
+    "month": "2025-09",
+    "value": 1592327.39
+   },
+   {
+    "month": "2025-10",
+    "value": 1893477.57
+   },
+   {
+    "month": "2025-11",
+    "value": 1874286.6
+   },
+   {
+    "month": "2025-12",
+    "value": 1826603.07
+   },
+   {
+    "month": "2026-01",
+    "value": 1837411.33
+   }
+  ]
+ },
+ "trend_unknown_metric": {
+  "metric": "ctr",
+  "series": [
+   {
+    "month": "2024-01",
+    "value": 9492363.16
+   },
+   {
+    "month": "2024-02",
+    "value": 12136429.82
+   },
+   {
+    "month": "2024-03",
+    "value": 9098779.09
+   },
+   {
+    "month": "2024-04",
+    "value": 9615388.17
+   },
+   {
+    "month": "2024-05",
+    "value": 9936720.4
+   },
+   {
+    "month": "2024-06",
+    "value": 7941396.61
+   },
+   {
+    "month": "2024-07",
+    "value": 9484439.25
+   },
+   {
+    "month": "2024-08",
+    "value": 8587135.01
+   },
+   {
+    "month": "2024-09",
+    "value": 11845283.77
+   },
+   {
+    "month": "2024-10",
+    "value": 14902956.72
+   },
+   {
+    "month": "2024-11",
+    "value": 13471468.5
+   },
+   {
+    "month": "2024-12",
+    "value": 21100585.27
+   },
+   {
+    "month": "2025-01",
+    "value": 13707323.1
+   },
+   {
+    "month": "2025-02",
+    "value": 9839265.59
+   },
+   {
+    "month": "2025-03",
+    "value": 10745609.09
+   },
+   {
+    "month": "2025-04",
+    "value": 8914240.71
+   },
+   {
+    "month": "2025-05",
+    "value": 9001157.85
+   },
+   {
+    "month": "2025-06",
+    "value": 10527411.67
+   },
+   {
+    "month": "2025-07",
+    "value": 7510123.84
+   },
+   {
+    "month": "2025-08",
+    "value": 9223077.55
+   },
+   {
+    "month": "2025-09",
+    "value": 8269634.62
+   },
+   {
+    "month": "2025-10",
+    "value": 15533025.41
+   },
+   {
+    "month": "2025-11",
+    "value": 15806957.74
+   },
+   {
+    "month": "2025-12",
+    "value": 16539059.65
+   },
+   {
+    "month": "2026-01",
+    "value": 10927873.88
+   }
+  ]
+ }
+}
