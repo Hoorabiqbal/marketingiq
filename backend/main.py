@@ -39,7 +39,7 @@ import llm_providers
 import query_router as qr
 from gemini_provider import call_gemini
 from gemini_rotator import GeminiKeyRotator, load_keys
-from llm_adapter import LLMAdapter
+from llm_adapter import BUSY_MESSAGE, LLMAdapter, ProviderSlots
 
 APP_DIR = Path(__file__).parent
 load_dotenv(APP_DIR / ".env")
@@ -50,13 +50,18 @@ qr.warm_up()  # router entity index, built once before the first request
 
 app = FastAPI(title="MarketingIQ AI Analyst")
 
-# Local dev: allow the static frontend (opened via file:// or a local server) to call this API.
-# Tighten this to your real deployed frontend origin before shipping publicly.
+# Browsers may call this API only from the deployed frontend (CORS_ALLOW_ORIGINS, comma-separated;
+# "*" allows any origin) or from a page served on this machine (localhost / 127.0.0.1, any port),
+# which is how the dashboard is run locally. No cookies or credentials are involved.
+DEFAULT_CORS_ORIGINS = "https://marketingiqp.netlify.app"
+CORS_ALLOW_ORIGINS = [o.strip().rstrip("/") for o in os.getenv("CORS_ALLOW_ORIGINS", DEFAULT_CORS_ORIGINS).split(",")
+                      if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=CORS_ALLOW_ORIGINS,
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
 )
 
 rotator = GeminiKeyRotator(load_keys())
@@ -66,8 +71,12 @@ MODEL = "gemini-3.6-flash"  # free-tier model; update here if Google renames/rep
 # exactly one provider (default gemini; see llm_providers.py) — no automatic failover. The Gemini
 # provider shares the rotator above with the chat fallback, which is always Gemini tool-use.
 LLM_PROVIDER = llm_providers.selected_provider()
+# At most this many requests wait on an LLM at once (explanations and the chat fallback share it),
+# so slow provider calls can never occupy all of the server's worker threads (40 by default).
+LLM_MAX_CONCURRENT = int(os.getenv("LLM_MAX_CONCURRENT", "20"))
+provider_slots = ProviderSlots(LLM_MAX_CONCURRENT)
 llm_adapter = LLMAdapter(llm_providers.build_provider(LLM_PROVIDER, rotator, MODEL),
-                         timeout_s=llm_providers.timeout_seconds(LLM_PROVIDER))
+                         timeout_s=llm_providers.timeout_seconds(LLM_PROVIDER), slots=provider_slots)
 
 # /api/chat answers through the Query Router first; the Gemini tool-use loop is the fallback.
 # CHAT_ROUTER_ENABLED=0 sends every chat request straight to the tool-use loop (rollback switch).
@@ -303,7 +312,10 @@ def chat(req: ChatRequest):
         reason = decision.reason
     else:
         reason = "router_disabled"
-    answer = _gemini_tool_loop(req.messages, filters)
+    with provider_slots.acquire() as got_slot:
+        text = _gemini_tool_loop(req.messages, filters) if got_slot else BUSY_MESSAGE
+    # The dashboard renders answers as HTML: escape Gemini's text like every routed answer.
+    answer = chat_routing.explanation_html(text)
     _log_chat("FALLBACK", reason, started)
     return {"answer": answer, "route": "FALLBACK"}
 

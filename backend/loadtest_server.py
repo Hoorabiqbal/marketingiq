@@ -21,7 +21,7 @@ from google.genai import models as genai_models
 
 import groq_provider
 
-COUNTERS = {"gemini_calls": 0, "groq_calls": 0, "mock_llm_calls": 0}
+COUNTERS = {"gemini_calls": 0, "groq_calls": 0, "mock_llm_calls": 0, "entity_index_builds": 0}
 _lock = threading.Lock()
 
 
@@ -50,6 +50,14 @@ def main():
     genai_models.Models.generate_content = _refuse_gemini
     groq_provider.GroqProvider.generate_explanation = _refuse_groq
     os.environ.setdefault("GEMINI_API_KEY", "loadtest-placeholder")
+
+    import query_router
+    build = query_router._build_entity_index
+
+    def counted_build():  # must run exactly once per process (main.py warms it at startup)
+        _count("entity_index_builds")
+        return build()
+    query_router._build_entity_index = counted_build
 
     import grounding
     import main as app_main

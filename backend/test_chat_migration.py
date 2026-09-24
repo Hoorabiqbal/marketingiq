@@ -9,6 +9,7 @@ DIRECT_DATABASE = 0 LLM calls, LLM_REQUIRED = 1 explanation call, fallback = the
 
 Run:  python test_chat_migration.py      (or: pytest test_chat_migration.py)
 """
+import html
 import json
 import os
 from contextlib import ExitStack
@@ -240,7 +241,7 @@ def _fallback_failure(side_effect):
     with Spies(gemini_side_effect=side_effect) as s:
         body = _assert_chat_schema(ask("Which campaigns are underperforming?"))
     assert body["route"] == "FALLBACK" and s.adapter.call_count == 0
-    return body["answer"], s.gemini.call_count
+    return html.unescape(body["answer"]), s.gemini.call_count  # answers are HTML-escaped text
 
 
 QUOTA = api_error(ge.ClientError, 429, "RESOURCE_EXHAUSTED: quota")
@@ -330,6 +331,31 @@ def test_chat_log_line_has_route_and_no_secrets():
     chat_lines = [json.loads(r.getMessage()) for r in records if "chat_answered" in r.getMessage()]
     assert chat_lines and chat_lines[-1]["route"] == "DIRECT_DATABASE" and chat_lines[-1]["elapsed_ms"] >= 0
     assert not any("test-key" in r.getMessage() for r in records)
+
+
+def test_fallback_answer_is_escaped_html():
+    """The dashboard inserts answers as HTML, so Gemini's fallback text is escaped like routed answers."""
+    history = [{"role": "user", "content": "What is total revenue?"}, {"role": "assistant", "content": "It is $1."}]
+    with Spies(gemini_side_effect=[text_response('<img src=x onerror="alert(1)"> **Revenue** rose.\nNext line')]):
+        body = _assert_chat_schema(ask("Why is that?", history))
+    assert body["route"] == "FALLBACK"
+    assert body["answer"] == ('&lt;img src=x onerror=&quot;alert(1)&quot;&gt; <b>Revenue</b> rose.<br>Next line')
+
+
+def test_cors_allows_only_the_frontend_and_local_pages():
+    def preflight(origin):
+        return client.options("/api/chat", headers={"Origin": origin, "Access-Control-Request-Method": "POST",
+                                                    "Access-Control-Request-Headers": "content-type"})
+    for origin in ("https://marketingiqp.netlify.app", "http://127.0.0.1:5500", "http://localhost:8080"):
+        r = preflight(origin)
+        assert r.status_code == 200 and r.headers["access-control-allow-origin"] == origin, origin
+    for origin in ("https://evil.example.com", "null", "https://marketingiqp.netlify.app.evil.com",
+                   "http://localhost.evil.com"):
+        r = preflight(origin)
+        assert r.status_code == 400 and "access-control-allow-origin" not in r.headers, origin
+    simple = client.get("/api/health", headers={"Origin": "https://evil.example.com"})
+    assert simple.status_code == 200 and "access-control-allow-origin" not in simple.headers
+    assert main.CORS_ALLOW_ORIGINS == ["https://marketingiqp.netlify.app"] or os.getenv("CORS_ALLOW_ORIGINS")
 
 
 if __name__ == "__main__":

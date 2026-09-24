@@ -16,8 +16,10 @@ today; others later) subclass LLMProvider and raise LLMProviderError subclasses.
 """
 import json
 import logging
+import threading
 import time
 from abc import ABC, abstractmethod
+from contextlib import contextmanager, nullcontext
 
 import grounding
 
@@ -142,12 +144,37 @@ def _is_empty_result(result) -> bool:
     return bool(lists) and not any(lists)
 
 
+BUSY_MESSAGE = ("Too many AI explanations are running right now. The figures are shown without an "
+                "explanation; please try again in a moment.")
+
+
+class ProviderSlots:
+    """Caps how many requests wait on an external LLM at once. Provider calls block a server worker
+    thread for seconds; without a cap, enough of them (40+) take every worker and even
+    DIRECT_DATABASE answers wait. Never queues: when full, the caller is told at once."""
+
+    def __init__(self, limit: int):
+        self.limit = max(1, int(limit))
+        self._sem = threading.BoundedSemaphore(self.limit)
+
+    @contextmanager
+    def acquire(self):
+        """Yields True with a slot held, or False immediately when all slots are taken."""
+        got = self._sem.acquire(blocking=False)
+        try:
+            yield got
+        finally:
+            if got:
+                self._sem.release()
+
+
 class LLMAdapter:
     def __init__(self, provider: LLMProvider, timeout_s: float = DEFAULT_TIMEOUT_S,
-                 max_analysis_bytes: int = MAX_ANALYSIS_BYTES):
+                 max_analysis_bytes: int = MAX_ANALYSIS_BYTES, slots: ProviderSlots = None):
         self.provider = provider
         self.timeout_s = timeout_s
         self.max_analysis_bytes = max_analysis_bytes
+        self.slots = slots
 
     def explain(self, question: str, analysis: dict) -> dict:
         """analysis: {"results": [{"tool", "tool_input", "result"}, ...], plus optional context
@@ -182,14 +209,17 @@ class LLMAdapter:
                           message="The analysis is too large to send for explanation.")
         meta["analysis_bytes"] = size
 
-        try:
-            text = self.provider.generate_explanation(question, context, self.timeout_s)
-        except LLMProviderError as e:
-            return finish("error", error=e.code, message=e.public_message,
-                          cause=type(e.__cause__).__name__ if e.__cause__ else None)
-        except Exception:
-            logger.exception("llm_adapter unexpected provider error")
-            return finish("error", error=LLMProviderError.code, message=LLMProviderError.public_message)
+        with (self.slots.acquire() if self.slots else nullcontext(True)) as got_slot:
+            if not got_slot:
+                return finish("error", error="busy", message=BUSY_MESSAGE)
+            try:
+                text = self.provider.generate_explanation(question, context, self.timeout_s)
+            except LLMProviderError as e:
+                return finish("error", error=e.code, message=e.public_message,
+                              cause=type(e.__cause__).__name__ if e.__cause__ else None)
+            except Exception:
+                logger.exception("llm_adapter unexpected provider error")
+                return finish("error", error=LLMProviderError.code, message=LLMProviderError.public_message)
         text, check = self._ground(question, context, text)
         check["local_ms"] = round(local_ms + check.pop("validation_ms"), 2)
         return finish("ok", text=text, grounding=check)

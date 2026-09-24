@@ -101,7 +101,7 @@ with patch.object(main.rotator.clients[0].models, "generate_content") as mock_ge
     mock_gen.side_effect = [make_function_call_response([("get_totals", {})]) for _ in range(10)]
     r = client_app.post("/api/chat", json={"messages": [{"role": "user", "content": "loop forever"}], "filters": {}})
     print(r.status_code, r.json())
-    assert "wasn't able to reach" in r.json()["answer"]
+    assert "wasn&#x27;t able to reach" in r.json()["answer"]  # HTML-escaped for the dashboard
     assert mock_gen.call_count == 6  # capped, didn't loop forever
 
 print("\n=== TEST 7: multiple simultaneous tool calls in one turn ===")

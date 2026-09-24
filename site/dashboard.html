@@ -1261,8 +1261,12 @@ function bindStaticChartTooltips(){
 }
 
 /* ============ AI ANALYST ============ */
-// Point this at your running backend (see /backend/README.md). Update before deploying.
-const AI_BACKEND_URL = 'https://marketingiq-backend.onrender.com/api/chat';
+// The deployed backend, or a local one when the dashboard itself is served locally
+// (python -m http.server 5500 --bind 127.0.0.1; see /backend/README.md).
+const AI_BACKEND_BASE = ['localhost', '127.0.0.1'].includes(location.hostname)
+  ? 'http://127.0.0.1:8000'
+  : 'https://marketingiq-backend.onrender.com';
+const AI_BACKEND_URL = AI_BACKEND_BASE + '/api/chat';
 let chatHistory = []; // {role:'user'|'assistant', content:string} — gives the AI real follow-up context
 
 function askQuick(q){ document.getElementById('chat-input').value=q; sendChat(); }

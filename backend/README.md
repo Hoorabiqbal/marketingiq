@@ -270,6 +270,11 @@ Explanations for `LLM_REQUIRED` questions come from **one** provider, chosen at 
   Authorization header and is never logged. Free-tier token limits per minute can be low
   (8K tokens/min was seen for `openai/gpt-oss-120b`, about 5 explanations a minute).
 - There is **no automatic failover.** If the selected provider fails, the answer says so.
+- At most `LLM_MAX_CONCURRENT` (default 20) requests wait on an LLM at once, shared by
+  explanations and the chat fallback. Extra ones get an immediate `busy` answer (the figures are
+  still returned) instead of queueing, so slow provider calls can't take every server worker
+  and database answers stay fast. Measured: with 45 explanations in flight on an 8 s provider,
+  database answers took 6.4 s without the cap and 14 ms with it.
   `DIRECT_DATABASE` questions never use any provider. The `/api/chat` fallback for
   unresolved questions is always the Gemini tool-use loop, whichever provider is selected.
 - `benchmark_llm_providers.py` runs the same 10 questions through each provider and reports
@@ -360,15 +365,43 @@ You do **not** need to add a new question/answer branch. Add one line to
 in `main.py`'s tool definitions for a new metric — every existing tool (`rank_dimension`,
 `compare_entities`, etc.) picks it up automatically.
 
-## Before deploying publicly
+## Deployment (Render)
 
-- Change `allow_origins=["*"]` in `main.py` to your actual deployed frontend URL.
-- Set `GEMINI_API_KEY` (or `GEMINI_API_KEY_1`, `_2`, `_3`, ...) as environment
-  variables/secrets on whatever host you use (Render, Railway, Fly.io, etc.) — in Render
-  specifically, this is the "Environment Variables" section when creating/editing the Web
-  Service — never bake keys into the code or a committed file.
-- Update `AI_BACKEND_URL` in `site/index.html` (near the top of the AI Analyst script
-  section) to point at your deployed backend URL instead of `127.0.0.1:8000`.
+The backend runs as a Render web service; the frontend (`site/`) is a static site on Netlify.
+
+- **Root directory:** `backend`. **Build:** `pip install -r requirements.txt`.
+  **Start:** `uvicorn main:app --host 0.0.0.0 --port $PORT` (one process; FastAPI runs the
+  sync endpoints on its 40-thread pool). Health check path: `/api/health`.
+- **Startup:** the CSV (`data/…csv`, in the repo) is parsed once, copied into in-memory DuckDB
+  and the router's entity index is built before the first request. There is no database file.
+  Under memory pressure DuckDB may spill to `backend/.tmp/` (ephemeral disk is fine).
+- **Memory:** about 155 MB idle and 180–235 MB under sustained load locally; DuckDB is capped
+  at 256 MB. This fits a 512 MB instance.
+- **Frontend:** `site/dashboard.html` calls the deployed backend, or `http://127.0.0.1:8000`
+  when the dashboard itself is served from localhost / 127.0.0.1.
+- **CORS:** only `CORS_ALLOW_ORIGINS` (default `https://marketingiqp.netlify.app`) and pages
+  served from localhost / 127.0.0.1 may call the API from a browser.
+- **Answers are HTML-escaped** on every path (the dashboard renders them as HTML).
+
+Environment variables (see `.env.example`; never commit keys):
+
+| Variable | Status | Default / notes |
+|---|---|---|
+| `GEMINI_API_KEY` or `GEMINI_API_KEY_1`, `_2`, … | **Required** | Gemini explanations and the chat fallback. Numbered keys rotate on quota errors. |
+| `LLM_PROVIDER` | Optional | `gemini` (default) or `groq`. No failover. |
+| `GROQ_API_KEY` | Optional (required if `LLM_PROVIDER=groq`) | |
+| `GROQ_MODEL` | Optional | `openai/gpt-oss-20b` |
+| `LLM_TIMEOUT_SECONDS` | Optional | `25` |
+| `LLM_MAX_CONCURRENT` | Optional | `20`. Requests beyond this waiting on an LLM get an immediate "busy" answer. |
+| `CHAT_FALLBACK_TIMEOUT_SECONDS` | Optional | `45` |
+| `CHAT_ROUTER_ENABLED` | Optional | `1`; `0` is the rollback switch to the Gemini tool-use loop. |
+| `CORS_ALLOW_ORIGINS` | Optional | `https://marketingiqp.netlify.app` (comma-separated; `*` = any) |
+| `MARKETINGIQ_DATA_BACKEND` | Optional | `duckdb`; `pandas` forces the fallback backend. |
+| `MARKETINGIQ_CSV_PATH` | Optional | `../data/tech_advertising_campaigns_dataset.csv` |
+| `PORT`, `PYTHON_VERSION` | Set by / in Render | |
+
+Development only: `requirements-dev.txt` (`psutil`) for `perf_profile.py` and `loadtest.py`.
+
 - If the project grows beyond the free tier's request volume, Gemini's paid tier (or
   switching back to a paid Claude/OpenAI key using the same tool-use pattern) is a
   drop-in upgrade — the `data_tools.py` layer doesn't change either way.

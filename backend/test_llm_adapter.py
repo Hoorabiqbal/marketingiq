@@ -259,6 +259,67 @@ def test_llm_required_queries_invoke_adapter():
     assert spy.explain.call_count == 3
 
 
+def test_provider_slots_cap_waiting_requests_without_queueing():
+    """Only `limit` requests wait on the provider at once; the rest get 'busy' at once (no queue, no
+    provider call) and still receive the analysis. Slots are released after success and failure."""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    from llm_adapter import BUSY_MESSAGE, ProviderSlots
+
+    release, inside = threading.Event(), threading.Semaphore(0)
+
+    class Blocking(LLMProvider):
+        name, model = "blocking", "none"
+
+        def __init__(self):
+            self.calls = 0
+
+        def generate_explanation(self, question, analysis, timeout_s):
+            self.calls += 1
+            inside.release()
+            release.wait(10)
+            return "explained"
+
+    provider = Blocking()
+    adapter = LLMAdapter(provider, slots=ProviderSlots(2))
+    with ThreadPoolExecutor(2) as pool:
+        held = [pool.submit(adapter.explain, "Why?", SAMPLE) for _ in range(2)]
+        assert inside.acquire(timeout=10) and inside.acquire(timeout=10)  # both slots in use
+        busy = qr.route_query(WHY_Q, {}, explainer=adapter)
+        assert busy["llm"]["status"] == "error" and busy["llm"]["error"] == "busy"
+        assert busy["llm"]["message"] == BUSY_MESSAGE and busy["analysis"] and provider.calls == 2
+        release.set()
+        assert all(f.result()["status"] == "ok" for f in held)
+    assert adapter.explain("Why?", SAMPLE)["status"] == "ok" and provider.calls == 3  # released
+
+    class Failing(LLMProvider):
+        name, model = "failing", "none"
+
+        def generate_explanation(self, question, analysis, timeout_s):
+            raise RuntimeError("boom")
+
+    failing = LLMAdapter(Failing(), slots=ProviderSlots(1))
+    assert failing.explain("Why?", SAMPLE)["status"] == "error"
+    assert failing.explain("Why?", SAMPLE)["error"] == "provider_error"  # the slot came back
+
+
+def test_chat_fallback_shares_the_provider_slots():
+    from llm_adapter import BUSY_MESSAGE
+    history = [{"role": "user", "content": "What is total revenue?"}, {"role": "assistant", "content": "It is $1."}]
+    body = {"messages": [*history, {"role": "user", "content": "Why is that?"}], "filters": {}}
+    held = [main.provider_slots._sem.acquire(blocking=False) for _ in range(main.provider_slots.limit)]
+    try:
+        assert all(held)
+        with patch.object(genai_models.Models, "generate_content",
+                          side_effect=AssertionError("Gemini must not be called while busy")):
+            r = client.post("/api/chat", json=body).json()
+    finally:
+        for _ in held:
+            main.provider_slots._sem.release()
+    assert r["route"] == "FALLBACK" and "Too many AI explanations" in r["answer"]
+    assert main.provider_slots.limit == int(os.getenv("LLM_MAX_CONCURRENT", "20"))
+
+
 if __name__ == "__main__":
     for lg in (qr.logger, logging.getLogger("marketingiq.llm_adapter")):
         lg.setLevel(logging.ERROR)  # keep per-request log lines out of the test output
