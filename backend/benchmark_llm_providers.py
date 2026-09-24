@@ -178,13 +178,16 @@ def main():
             entry = {"question": c["question"], "status": out["status"], "error": out.get("error"),
                      "provider_ms": round(provider_ms, 1), "local_analysis_ms": c["local_analysis_ms"],
                      "words": len(text.split()), "chars": len(text), "text": text,
+                     # grounding.py's verdict; when it failed, `text` is the data summary users would see.
+                     "grounding": out.get("grounding"),
                      **check_numbers(text, c["supplied_numbers"])}
             for log in provider_logs:
                 key = "groq_usage" if log["event"] == "groq_generation" else "rate_limit"
                 entry[key] = log
             run["answers"].append(entry)
             print(f"[{name}] {i + 1}/{len(cases)} {out['status']:5} {provider_ms:8.0f} ms  "
-                  f"words={entry['words']:3}  numbers={entry['numbers_cited']:2} unsupported={entry['unsupported']}",
+                  f"words={entry['words']:3}  numbers={entry['numbers_cited']:2} unsupported={entry['unsupported']}  "
+                  f"grounding={(entry['grounding'] or {}).get('action')}",
                   flush=True)
         run["system_after"] = system_mem()
         ok = [a["provider_ms"] for a in run["answers"] if a["status"] == "ok"]
@@ -196,7 +199,9 @@ def main():
                           "numbers_cited": sum(a["numbers_cited"] for a in run["answers"]),
                           "numbers_supported": sum(a["supported"] for a in run["answers"]),
                           "numbers_unsupported": sum(len(a["unsupported"]) for a in run["answers"]),
-                          "rate_limited": sum(a["error"] == "rate_limited" for a in run["answers"])}
+                          "rate_limited": sum(a["error"] == "rate_limited" for a in run["answers"]),
+                          "grounding_replaced": sum((a["grounding"] or {}).get("action") == "replaced_with_data_summary"
+                                                    for a in run["answers"])}
         results["providers"][name] = run
         print(f"[{name}] summary: {run['summary']}", flush=True)
 

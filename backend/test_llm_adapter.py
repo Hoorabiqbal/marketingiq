@@ -21,6 +21,7 @@ from google.genai import errors as ge
 from google.genai import models as genai_models
 from google.genai import types
 
+import grounding
 import main
 import query_router as qr
 from gemini_provider import GeminiProvider
@@ -84,7 +85,9 @@ def test_provider_interface_accepts_question_and_analysis():
     provider = RecordingProvider()
     out = LLMAdapter(provider, timeout_s=7).explain("Why?", SAMPLE)
     assert out["status"] == "ok" and out["text"] == "explained" and out["provider"] == "recording"
-    assert provider.calls == [("Why?", SAMPLE, 7)]
+    # The provider gets the typed, unit-aware context built from the analysis (grounding.py).
+    assert provider.calls == [("Why?", grounding.build_llm_context("Why?", SAMPLE), 7)]
+    assert provider.calls[0][1]["metric_units"]["roas"].startswith("x:")
     try:
         LLMProvider()
         raise AssertionError("LLMProvider must be abstract")
@@ -99,8 +102,10 @@ def test_gemini_receives_compact_router_analysis():
         r = qr.route_query(WHY_Q, {"budget": "High"}, explainer=gemini_adapter())
     assert gen.call_count == 1  # one LLM call per request
     sent = sent_analysis(gen)
-    assert sent["results"] == json.loads(json.dumps(r["analysis"]))  # exactly the router's analysis
-    assert sent["filters_applied"] == {"budget": "High"}
+    expected = grounding.build_llm_context(WHY_Q, {"filters_applied": {"budget": "High"},
+                                                   "focus_metrics": r["focus_metrics"], "results": r["analysis"]})
+    assert sent == json.loads(json.dumps(expected))  # the router's analysis, typed — nothing else
+    assert sent["active_filters"] == {"budget_tier": "High"} and sent["population"] == "dashboard-filtered view"
     config = gen.call_args.kwargs["config"]
     assert config.system_instruction == GROUNDING_INSTRUCTIONS
     assert sent_prompt(gen).startswith(f"QUESTION:\n{WHY_Q}")

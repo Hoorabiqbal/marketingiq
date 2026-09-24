@@ -39,11 +39,16 @@ Gemini stays the default provider. Groq stays available as an optional hosted pr
 (`LLM_PROVIDER=groq`). The local Qwen/Ollama provider is removed (too slow on CPU and not
 grounded enough). There is no automatic failover between providers.
 
-## Issues found that affect every provider (not yet fixed)
+## Issues found that affect every provider
 
-1. The creative-fatigue payload labels its buckets `age_range` without a unit (they are days).
-2. Filtered questions ("spend over 10000") get a 10-row sample and no aggregates for the
-   filtered group, so the question's premise can't be checked from the data.
-3. "Explain the decline in CTR" is answered with creative-age data; there is no CTR time
-   series, and no provider questioned the premise.
-4. The benchmark's number check (above) can't detect wrong comparisons or labels.
+Addressed in the grounding phase (`grounding.py`; these answers are regression fixtures in
+`test_grounding.py`):
+
+1. Creative-fatigue buckets now carry `unit: "days"` and say they are not audience age.
+2. Filtered questions now get `aggregates` for the whole matching group, with the example
+   rows labelled separately as individual campaigns.
+3. "Explain the decline in CTR": `analysis_scope` now states that no CTR time series is
+   supplied, so a change over time can't be established. The data still has no CTR series.
+4. A numerical-claim validator now checks units, adjacent metric labels, entity, month and
+   scope, not only whether a number appears. It still can't check comparisons between two
+   supported values.

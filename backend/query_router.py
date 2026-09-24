@@ -471,7 +471,7 @@ def _plan_llm_context(f: _Features) -> list:
     if f.thresholds:
         conditions = [{"field": fl, "operator": op, "value": v} for fl, op, v in f.thresholds]
         calls.append(ToolCall("filter_campaigns", {"conditions": conditions, "sort_by": f.thresholds[0][0],
-                                                   "limit": MAX_LLM_CAMPAIGN_ROWS}))
+                                                   "limit": MAX_LLM_CAMPAIGN_ROWS, "include_aggregates": True}))
 
     if len(calls) < MAX_LLM_TOOL_CALLS:
         calls.append(ToolCall("get_totals"))  # overall baseline, 13 numbers
@@ -578,7 +578,7 @@ def route_query(query: str, filters: dict = None, explainer=None) -> dict:
     Raises a QueryRouterError subclass (with .status_code / .public_message) on failure.
     """
     started = time.perf_counter()
-    route, tools, llm_status = None, [], None
+    route, tools, llm_status, grounding = None, [], None, None
     try:
         filters = _validate(query, filters)
         plan = classify_query(query)
@@ -606,12 +606,13 @@ def route_query(query: str, filters: dict = None, explainer=None) -> dict:
                 response["explanation"] = llm.pop("text", None)
                 response["llm"] = llm
             llm_status = response["llm"]["status"]
+            grounding = (response["llm"].get("grounding") or {}).get("action")
         else:
             response = {**base, "message": plan.message, "reason": plan.reason, "llm_required": False}
 
         elapsed = round((time.perf_counter() - started) * 1000, 2)
         response["elapsed_ms"] = elapsed
-        _log("ok", query, route, tools, elapsed, llm_status=llm_status)
+        _log("ok", query, route, tools, elapsed, llm_status=llm_status, grounding=grounding)
         return response
     except QueryRouterError as e:
         _log("error", query, route, tools, round((time.perf_counter() - started) * 1000, 2),

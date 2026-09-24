@@ -1,10 +1,12 @@
 """
 MarketingIQ LLM Adapter — provider-independent explanation layer.
 
-    question + compact analysis block  ->  LLMAdapter  ->  LLMProvider  ->  explanation
+    question + compact analysis  ->  LLMAdapter  ->  typed context (grounding.py)
+        ->  LLMProvider  ->  numeric-claim validation (grounding.py)  ->  explanation
 
 The analytics tools remain the source of numerical truth; the LLM only explains
-results it is handed. The adapter guarantees what reaches a provider is small,
+results it is handed. An answer containing a number the data doesn't support is
+replaced by a deterministic summary of the data, the same way for every provider. The adapter guarantees what reaches a provider is small,
 plain JSON (never a DataFrame, the CSV or the full campaign table) and turns
 every provider failure into a structured result, so callers never crash
 because an LLM is slow, rate-limited or misconfigured.
@@ -16,6 +18,8 @@ import json
 import logging
 import time
 from abc import ABC, abstractmethod
+
+import grounding
 
 logger = logging.getLogger("marketingiq.llm_adapter")
 if not logger.handlers:
@@ -31,22 +35,26 @@ MAX_ANALYSIS_BYTES = 16_000
 # Shared by every provider so answers are grounded the same way regardless of model.
 GROUNDING_INSTRUCTIONS = """You are the MarketingIQ explanation layer for a marketing analytics product.
 
-You receive a user QUESTION and an ANALYSIS block: JSON results computed from the real
-MarketingIQ campaign dataset by the analytics engine. The ANALYSIS block is your only source
-of facts.
+You receive a QUESTION and an ANALYSIS block: JSON computed from the real MarketingIQ campaign
+data. ANALYSIS is your only source of facts.
 
 Rules, no exceptions:
-1. Use only numbers and facts that appear in ANALYSIS. Never invent, estimate, extrapolate or
-   calculate new figures. You may say one supplied value is higher or lower than another.
-2. If ANALYSIS does not contain what the question needs, say plainly which part cannot be
-   answered from the available data. Do not fill the gap from general knowledge.
-3. Keep facts and interpretation visibly separate:
-   - "What the data shows:" the relevant supplied figures.
-   - "Interpretation:" possible business explanations, worded as hypotheses ("may", "could",
-     "one possible reason"). The data shows correlation only — never claim a proven cause.
-4. If filters_applied is non-empty, say the figures reflect that filtered view.
-5. Be concise: at most about 150 words, plain business language, no preamble or sign-off.
-   No generic marketing advice unless the question asks for recommendations.
+1. Every number you write must appear in ANALYSIS (rounding is fine). Never invent, estimate or
+   calculate new figures: no differences, ratios, shares, averages or counts of your own.
+2. Keep each value's unit from metric_units. "x" values such as ROAS are ratios, never
+   percentages. "%" values are already percentages. "$" values are money. Never convert units.
+3. Attach each value to its own metric, entity, month and scope. "aggregate"/"aggregates" are
+   group figures; "examples" are individual campaigns, never averages. A filtered_subset's
+   figures describe only that subset. creative_age is the age of the ad creative in days, not
+   audience age.
+4. analysis_scope says what this data can and cannot establish. The data is observational:
+   describe reasons only as hypotheses ("may", "could"), never as proven causes. If the question
+   needs something the data cannot establish (a cause, or a change over time with no time
+   series), say so plainly.
+5. If active_filters is non-empty, say the figures reflect that filtered view.
+6. Format: "What the data shows:" (the relevant supplied figures), then "Interpretation:"
+   (hypotheses). At most about 150 words, plain business language, no preamble or sign-off,
+   no generic marketing advice unless the question asks for recommendations.
 """
 
 
@@ -162,7 +170,10 @@ class LLMAdapter:
             return finish("skipped", error="empty_analysis",
                           message="No campaign data matched this question, so there is nothing to explain.")
         try:
-            size = len(serialize_analysis(analysis).encode("utf-8"))
+            local_started = time.perf_counter()
+            context = grounding.build_llm_context(question, analysis)
+            size = len(serialize_analysis(context).encode("utf-8"))
+            local_ms = (time.perf_counter() - local_started) * 1000
         except (TypeError, ValueError):
             return finish("error", error="invalid_analysis",
                           message="The analysis could not be prepared for explanation.")
@@ -172,11 +183,41 @@ class LLMAdapter:
         meta["analysis_bytes"] = size
 
         try:
-            text = self.provider.generate_explanation(question, analysis, self.timeout_s)
+            text = self.provider.generate_explanation(question, context, self.timeout_s)
         except LLMProviderError as e:
             return finish("error", error=e.code, message=e.public_message,
                           cause=type(e.__cause__).__name__ if e.__cause__ else None)
         except Exception:
             logger.exception("llm_adapter unexpected provider error")
             return finish("error", error=LLMProviderError.code, message=LLMProviderError.public_message)
-        return finish("ok", text=text)
+        text, check = self._ground(question, context, text)
+        check["local_ms"] = round(local_ms + check.pop("validation_ms"), 2)
+        return finish("ok", text=text, grounding=check)
+
+    def _ground(self, question: str, context: dict, text: str):
+        """Every provider's answer passes the same deterministic check. An answer with a number the
+        data doesn't support is never shown: it is replaced by a summary built from the data itself
+        (no second LLM call). An unhedged causal claim keeps the answer but adds a caveat."""
+        started = time.perf_counter()
+        try:
+            report = grounding.validate_explanation(text, context, question)
+        except Exception:  # a validator bug must not expose an unchecked answer
+            logger.exception("grounding validator error")
+            report = grounding.ValidationReport(False, [{"category": "validator_error", "claim": ""}])
+        if not report.passed:
+            action, text = "replaced_with_data_summary", grounding.safe_summary(context)
+        elif report.causal_flags:
+            action, text = "caveat_added", f"{text.rstrip()}\n\n{grounding.CAUSAL_CAVEAT}"
+        else:
+            action = "none"
+        ms = (time.perf_counter() - started) * 1000
+        # Sanitized: the provider, the categories and the offending numbers only — never the
+        # question, the answer text or any credential.
+        logger.log(logging.INFO if report.passed else logging.WARNING, json.dumps({
+            "event": "grounding_check", "provider": self.provider.name, "model": self.provider.model,
+            "passed": report.passed, "action": action, "numbers_checked": report.numbers_checked,
+            "causal_flags": report.causal_flags,
+            "issues": [{k: str(v)[:40] for k, v in i.items()} for i in report.issues[:10]],
+            "validation_ms": round(ms, 2)}))
+        return text, {"passed": report.passed, "action": action, "issues": report.categories(),
+                      "numbers_checked": report.numbers_checked, "validation_ms": ms}

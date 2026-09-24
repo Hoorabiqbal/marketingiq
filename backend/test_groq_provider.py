@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 from google.genai import models as genai_models
 from google.genai import types
 
+import grounding
 import llm_providers
 import main
 import query_router as qr
@@ -107,8 +108,8 @@ def test_correct_model_and_request_shape():
 def test_compact_analysis_identical_to_gemini_input():
     r, fake = explain(lambda req: httpx.Response(200, json=OK_BODY), filters={"budget": "High"})
     groq_user_prompt = fake.body()["messages"][1]["content"]
-    expected = build_user_prompt(WHY_Q, {"filters_applied": {"budget": "High"},
-                                         "focus_metrics": r["focus_metrics"], "results": r["analysis"]})
+    expected = build_user_prompt(WHY_Q, grounding.build_llm_context(
+        WHY_Q, {"filters_applied": {"budget": "High"}, "focus_metrics": r["focus_metrics"], "results": r["analysis"]}))
     assert groq_user_prompt == expected
     candidate = types.Candidate(content=types.Content(role="model", parts=[types.Part(text="ok")]))
     with patch.object(genai_models.Models, "generate_content",

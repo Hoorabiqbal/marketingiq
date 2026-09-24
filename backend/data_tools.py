@@ -295,7 +295,7 @@ def get_numeric_field_stats(fields: list, filters: dict = None) -> dict:
 
 
 def filter_campaigns(conditions: list, sort_by: str = "profit", order: str = "asc",
-                      limit: int = 10, filters: dict = None) -> dict:
+                      limit: int = 10, filters: dict = None, include_aggregates: bool = False) -> dict:
     """conditions: list of {field, operator, value} e.g. [{"field":"spend","operator":">","value":40000},
     {"field":"revenue","operator":"<","value":20000}]. Lets the AI find campaigns matching
     real numeric criteria (e.g. 'high spend, low revenue') using thresholds it derived from
@@ -315,7 +315,12 @@ def filter_campaigns(conditions: list, sort_by: str = "profit", order: str = "as
     rename = {"campaign_id": "id", "campaign_objective": "objective", "ad_spend": "spend",
               "ROAS": "roas", "CPA": "cpa", "conversion_rate": "conversion_rate"}
     campaigns = [{rename.get(k, k): _round2(v) for k, v in r.items()} for r in rows]
-    return {"matched_count": int(matched), "campaigns": campaigns}
+    out = {"matched_count": int(matched), "campaigns": campaigns}
+    if include_aggregates:
+        # Totals for the whole matching group (same formulas as get_totals), so an explanation
+        # never has to present the few example rows above as if they described the group.
+        out["aggregates"] = _metrics_from_sums(repo.aggregate(where)[0])
+    return out
 
 
 def _round2(value):

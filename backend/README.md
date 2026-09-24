@@ -256,6 +256,52 @@ facts and interpretation separate, and stay short. Each call has a hard timeout
 To add a provider, subclass `LLMProvider`, raise the `llm_adapter` error types, and pass it
 to `LLMAdapter` in `main.py`.
 
+### Grounding (`grounding.py`)
+
+Every provider gets the same **typed context**, and every provider answer goes through the
+same **numerical-claim validator**. Both run in the adapter, so Gemini and Groq are treated
+identically and `DIRECT_DATABASE` never touches either.
+
+**Typed context** (built from the router's analysis. It describes the metrics and never
+recomputes one):
+- `metric_units`: `$` money, `x` ratio (ROAS: revenue / spend, never a percentage), `%`
+  already a percentage (CTR and conversion rate are ×100 in the data: 2.16 means 2.16%), and
+  `count`. The dataset has no currency column; `$` follows the dashboard, and no currency
+  code is claimed.
+- `sections`, one per tool: `aggregate` (all campaigns in scope), `comparison` (dimension,
+  ranking metric, order, entity rows), `time_series` (metric, unit, month granularity, entity
+  scope), `creative_age_buckets` (unit **days**, from the `creative_age_days` column: the age
+  of the ad creative, not audience age), and `filtered_subset` (conditions with units, the
+  matched count, `aggregates` for the whole matching group, and separately labelled
+  `examples`).
+- `active_filters` only lists filters that narrow the data (the dashboard's "All Platforms"
+  placeholders are dropped).
+- `analysis_scope` states what the data supports and what it doesn't. Causes are never
+  supported. It also names a change over time for a metric with no time series (e.g. CTR).
+
+**Validator**: every number in the answer must match a supplied value, rounded or truncated
+at the precision written (`$284.16M`, `284.2 million`, `284,157,706`, `10 000` with narrow
+spaces), with a compatible unit. Detected: `unsupported_value`, `unit_mismatch` (ROAS 6.54x
+written as 6.54%, creative-age days as years), `metric_label_mismatch` (a CPA value called
+CTR, revenue called spend), `derived_value` ("3.4 times higher", "20% lower"),
+`example_as_aggregate`, `scope_mismatch` (an overall figure attributed to a filtered
+subset), `entity_mismatch`, `month_mismatch` and `unsupported_date`. List numbering (including inline "1) … 2) …"), "3
+observations", "step 2" and "top 3" (within the supplied ranking) are ignored.
+
+**When validation fails**, the answer is never shown. The adapter returns a deterministic
+summary built from the context ("What the data shows: …") plus a note that the explanation
+was withheld. There is no second LLM call. An answer whose numbers pass but that states a
+cause without hedging ("because", "drives") is kept, with a caveat that the data shows what
+happened, not why. The `llm.grounding` field reports `passed`, `action` (`none` /
+`caveat_added` / `replaced_with_data_summary`), issue categories and `local_ms`. A
+`grounding_check` log line records the provider, the categories and the offending numbers,
+never the question, the answer text or any key.
+
+**Limits**: numbers written as words ("three times") aren't checked. A comparison between two
+supported values ("A is higher than B") isn't checked. Bounds such as "ROAS below 1" or
+"over $6" count as unsupported unless that number is in the data. The causal check is a
+keyword heuristic. The `/api/chat` fallback (Gemini tool-use loop) is not validated.
+
 Tests (no API key or quota needed, since Gemini is mocked and fails if called for real):
 ```
 python test_query_router.py
@@ -263,6 +309,7 @@ python test_llm_adapter.py
 python test_data_layer.py
 python test_chat_migration.py
 python test_groq_provider.py
+python test_grounding.py
 ```
 
 ## Adding a new askable dimension or metric
