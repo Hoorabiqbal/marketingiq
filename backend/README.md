@@ -110,6 +110,43 @@ verify the plumbing works before you have a real key:
 python test_app.py
 ```
 
+## How `/api/chat` answers (Query Router first, Gemini tool-use loop as fallback)
+
+The chat API is unchanged for the dashboard: it still takes `{messages, filters}` and
+returns `{answer}`, now with an extra `route` field. The latest question goes through
+`chat_routing.py`:
+
+| Route | When | LLM calls |
+|---|---|---|
+| `DIRECT_DATABASE` | The router maps the question to one data tool ("total revenue", "highest ROAS by platform", "monthly revenue") | **0**. The answer is built from the DuckDB result |
+| `LLM_REQUIRED` | "why" / "explain" questions | **1** explanation through the LLM Adapter, using the compact analysis |
+| `UNSUPPORTED` | Asks for data the dataset doesn't have (e.g. countries) | 0 |
+| `FALLBACK` | Everything the router can't plan confidently: judgement calls ("high spend", "underperforming"), relative dates ("last month"), follow-ups that depend on earlier messages ("what about TikTok?"), small talk | The original Gemini tool-use loop |
+
+A request never goes down two LLM paths: once a question is answered or explained on the
+routed path, it never reaches the fallback. Set `CHAT_ROUTER_ENABLED=0` to send every
+chat request straight to the original tool-use loop, as a rollback switch.
+
+**Conversation history:** the router only looks at the latest question. When there is
+earlier conversation and the question leans on it (pronouns like "it"/"that", or openers
+like "and…" / "what about…"), it goes to the fallback, which receives the full history.
+There is no separate conversation memory.
+
+**Who owns retries and timeouts** (so one failure is retried in exactly one place):
+
+| Concern | Owner |
+|---|---|
+| Quota errors: switch to the next API key | `GeminiKeyRotator` |
+| Per-request HTTP timeout and overall deadline | `call_gemini()` in `gemini_provider.py` |
+| Transient 5xx / network errors: at most 3 attempts, with backoff, within the deadline | `call_gemini()` |
+| Turning an error into a user message | `LLMAdapter` (explanations), or `_message_for_error` (fallback) |
+
+The SDK's own retries are off. The endpoint, adapter and router add none. With
+`LLM_PROVIDER=qwen`, each explanation is one Ollama request within the deadline, with no
+retries: retrying a slow local model would only load the machine further. Deadlines are
+`LLM_TIMEOUT_SECONDS` (default 25) for an explanation and
+`CHAT_FALLBACK_TIMEOUT_SECONDS` (default 45) for the whole fallback loop.
+
 ## Data layer (DuckDB)
 
 ```
@@ -172,6 +209,33 @@ Errors return a safe message with no stack trace: `400` for an empty or invalid 
 tool fails. Each request writes one structured log line (query, route, tools,
 elapsed_ms, status).
 
+### LLM providers (Gemini or local Qwen)
+
+Explanations for `LLM_REQUIRED` questions come from **one** provider, chosen at startup:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `LLM_PROVIDER` | `gemini` | `gemini` (Google API) or `qwen` (local model through Ollama). Any other value stops startup |
+| `OLLAMA_HOST` | `http://127.0.0.1:11434` | Where Ollama listens. `host:port` or a full URL |
+| `OLLAMA_MODEL` | `qwen2.5:1.5b-instruct` | The Ollama model tag |
+| `LLM_TIMEOUT_SECONDS` | 25 (gemini) / 90 (qwen) | Deadline per explanation. Local CPU inference, including a cold model load, needs longer |
+
+To use Qwen: install [Ollama](https://ollama.com), run `ollama pull qwen2.5:1.5b-instruct`
+once, keep Ollama running, and start the backend with `LLM_PROVIDER=qwen`.
+`/api/health` shows the active `llm_provider` and `llm_model`.
+
+- Both providers get the **same input**: the question plus the same compact analysis
+  (`build_user_prompt`). Qwen gets a shorter system prompt with the same grounding rules.
+- There is **no automatic failover.** If the selected provider fails, the answer says so.
+  `DIRECT_DATABASE` questions never use either provider. The `/api/chat` fallback for
+  unresolved questions is always the Gemini tool-use loop, whichever provider is selected.
+- **Local inference limits:** Qwen runs on the CPU here (no supported GPU). The first
+  request after the model unloads (Ollama's default is 5 minutes idle) pays the model load
+  time. Requests compete for the same CPU, so throughput under several simultaneous users
+  still needs its own load test.
+- `benchmark_llm_providers.py` runs the same 10 questions through each provider and reports
+  latency, grounding checks and resource use.
+
 ### LLM Adapter
 
 `LLM_REQUIRED` answers are explained through `llm_adapter.py`: a provider-independent
@@ -196,6 +260,8 @@ Tests (no API key or quota needed, since Gemini is mocked and fails if called fo
 python test_query_router.py
 python test_llm_adapter.py
 python test_data_layer.py
+python test_chat_migration.py
+python test_qwen_provider.py
 ```
 
 ## Adding a new askable dimension or metric

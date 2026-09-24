@@ -164,6 +164,21 @@ def test_unsupported_query():
     assert _route("Show ROAS by month")["route"] == "NEEDS_CLARIFICATION"
 
 
+def test_uncertain_questions_are_not_answered_directly():
+    # Phase 5: judgement words, change-over-time and relative dates used to fall through to
+    # get_totals (all-time totals). They must not get a confident direct answer.
+    for q in ("Which campaigns have high spend but low revenue?", "Is revenue growing?",
+              "What was revenue last month?", "Which platform is most profitable?"):
+        r = _route(q)
+        assert r["route"] == "NEEDS_CLARIFICATION" and r["reason"] == "uncertain", (q, r["route"])
+    # Numeric thresholds are not "uncertain", and direct questions are unaffected.
+    assert _route("Show campaigns with ROAS higher than 8")["tool"] == "filter_campaigns"
+    assert _route("Which platform has the lowest CPA?")["tool"] == "rank_dimension"
+    assert _route("Why is revenue declining?")["route"] == "LLM_REQUIRED"
+    assert _route("Show revenue by country")["reason"] == "unavailable_data"
+    assert _route("What's the weather in Paris?")["reason"] == "off_topic"
+
+
 def test_malformed_input():
     for bad in (None, 123, ["total revenue"]):
         _raises(qr.InvalidQueryError, _route, bad)

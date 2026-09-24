@@ -9,6 +9,9 @@ whether a real GEMINI_API_KEY is configured.
 """
 import os
 os.environ["GEMINI_API_KEY"] = "test-placeholder-not-real"
+# These tests exercise the Gemini tool-use loop, which /api/chat now uses as its fallback;
+# the routed path (Query Router first) is covered by test_chat_migration.py.
+os.environ["CHAT_ROUTER_ENABLED"] = "0"
 
 from unittest.mock import patch
 from fastapi.testclient import TestClient

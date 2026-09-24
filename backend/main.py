@@ -22,6 +22,7 @@ Architecture (unchanged from the Claude version):
 Run locally:
     uvicorn main:app --reload --port 8000
 """
+import json
 import os
 import time
 from pathlib import Path
@@ -32,11 +33,13 @@ from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 from google.genai import types
 
+import chat_routing
 import data_tools as dt
+import llm_providers
 import query_router as qr
-from gemini_provider import GeminiProvider
+from gemini_provider import call_gemini
 from gemini_rotator import GeminiKeyRotator, load_keys
-from llm_adapter import DEFAULT_TIMEOUT_S, LLMAdapter
+from llm_adapter import LLMAdapter
 
 APP_DIR = Path(__file__).parent
 load_dotenv(APP_DIR / ".env")
@@ -58,10 +61,18 @@ app.add_middleware(
 rotator = GeminiKeyRotator(load_keys())
 MODEL = "gemini-3.6-flash"  # free-tier model; update here if Google renames/replaces it again
 
-# Explanation layer for /api/query's LLM_REQUIRED route. Shares the rotator above, so keys,
-# rotation state and quota handling are the same ones /api/chat uses.
-llm_adapter = LLMAdapter(GeminiProvider(rotator, MODEL),
-                         timeout_s=float(os.getenv("LLM_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_S)))
+# Explanation layer for LLM_REQUIRED questions (/api/query and /api/chat). LLM_PROVIDER picks
+# exactly one provider (default gemini; see llm_providers.py) — no automatic failover. The Gemini
+# provider shares the rotator above with the chat fallback, which is always Gemini tool-use.
+LLM_PROVIDER = llm_providers.selected_provider()
+llm_adapter = LLMAdapter(llm_providers.build_provider(LLM_PROVIDER, rotator, MODEL),
+                         timeout_s=llm_providers.timeout_seconds(LLM_PROVIDER))
+
+# /api/chat answers through the Query Router first; the Gemini tool-use loop is the fallback.
+# CHAT_ROUTER_ENABLED=0 sends every chat request straight to the tool-use loop (rollback switch).
+CHAT_ROUTER_ENABLED = os.getenv("CHAT_ROUTER_ENABLED", "1").strip().lower() not in ("0", "false", "no", "off")
+# Whole-request deadline for the tool-use loop (all of its Gemini turns and retries together).
+CHAT_FALLBACK_TIMEOUT_S = float(os.getenv("CHAT_FALLBACK_TIMEOUT_SECONDS", "45"))
 
 SYSTEM_PROMPT = """You are the MarketingIQ AI Analyst, a data-grounded marketing analytics assistant.
 
@@ -262,46 +273,77 @@ def _message_for_error(err: str) -> str:
         return f"Gemini's servers are temporarily overloaded after a few retries — please try again in a moment. ({err[len('server:'):]})"
     if err.startswith("client:"):
         return f"The AI Analyst hit a request error: {err[len('client:'):]}"
+    if err.startswith("timeout:"):
+        return "The AI Analyst took too long to respond, so the request was stopped — please try again."
     return f"The AI Analyst hit an unexpected error: {err}"
+
+
+# Explanation failures on the routed path reuse the same user-facing messages as the fallback.
+_LLM_ERROR_TAGS = {"not_configured": "no_key", "auth_error": "auth:", "rate_limited": "quota_exhausted:",
+                   "timeout": "timeout:"}
+
+
+def _llm_error_answer(llm: dict) -> str:
+    tag = _LLM_ERROR_TAGS.get(llm.get("error")) if llm.get("provider") == "gemini" else None
+    return _message_for_error(tag) if tag else llm.get("message") or _message_for_error("unexpected")
 
 
 @app.post("/api/chat")
 def chat(req: ChatRequest):
-    if not rotator.configured:
-        return {"answer": _message_for_error("no_key")}
-
+    started = time.perf_counter()
     filters = req.filters or {}
+    if CHAT_ROUTER_ENABLED:
+        last = req.messages[-1] if req.messages else None
+        question = last.content if last is not None and last.role == "user" else ""
+        decision = chat_routing.decide(question, len(req.messages) > 1, filters, llm_adapter, _llm_error_answer)
+        if decision.answer is not None:
+            _log_chat(decision.route, decision.reason, started)
+            return {"answer": decision.answer, "route": decision.route}
+        reason = decision.reason
+    else:
+        reason = "router_disabled"
+    answer = _gemini_tool_loop(req.messages, filters)
+    _log_chat("FALLBACK", reason, started)
+    return {"answer": answer, "route": "FALLBACK"}
+
+
+def _log_chat(route: str, reason: str, started: float):
+    qr.logger.info(json.dumps({"event": "chat_answered", "route": route, "reason": reason,
+                               "elapsed_ms": round((time.perf_counter() - started) * 1000, 2)}))
+
+
+def _gemini_tool_loop(messages: list, filters: dict) -> str:
+    """The original AI Analyst: Gemini picks data tools itself. Used for questions the Query
+    Router can't plan (follow-ups, judgement calls, anything unresolved). Every Gemini call goes
+    through call_gemini (per-request timeout + bounded 5xx retry), and the whole loop shares one
+    deadline, so it always terminates."""
+    if not rotator.configured:
+        return _message_for_error("no_key")
+
     contents = [
         types.Content(role=("model" if m.role == "assistant" else "user"), parts=[types.Part.from_text(text=m.content)])
-        for m in req.messages
+        for m in messages
     ]
-
-    config = types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT, tools=[GEMINI_TOOL])
+    config = {"system_instruction": SYSTEM_PROMPT, "tools": [GEMINI_TOOL]}
+    deadline = time.monotonic() + CHAT_FALLBACK_TIMEOUT_S
 
     # Agentic loop: keep calling Gemini, executing any tool calls it makes,
     # until it returns a final plain-text answer (or we hit a safety cap).
     for _ in range(6):
-        response = None
-        err = None
-        # Server-error retries (transient infra overload) stay on whichever key the
-        # rotator is currently using — that's a Gemini-wide issue, not a per-key one.
-        for attempt in range(3):
-            response, err = rotator.call(MODEL, contents, config)
-            if response is not None or not (err and err.startswith("server:")):
-                break
-            if attempt < 2:
-                time.sleep(1.5 * (attempt + 1))  # brief backoff: 1.5s, then 3s
-
+        response, err = call_gemini(rotator, MODEL, contents, config, deadline)
         if response is None:
-            return {"answer": _message_for_error(err)}
+            return _message_for_error(err)
 
-        candidate = response.candidates[0]
-        parts = candidate.content.parts or []
+        try:
+            candidate = response.candidates[0]
+            parts = candidate.content.parts or []
+        except (AttributeError, IndexError, TypeError):
+            return "The AI Analyst didn't return a response for that question — try rephrasing it."
         function_calls = [p.function_call for p in parts if p.function_call is not None]
 
         if not function_calls:
             final_text = "".join(p.text for p in parts if p.text)
-            return {"answer": final_text or "The AI Analyst didn't return a response for that question — try rephrasing it."}
+            return final_text or "The AI Analyst didn't return a response for that question — try rephrasing it."
 
         contents.append(candidate.content)
         response_parts = []
@@ -310,7 +352,7 @@ def chat(req: ChatRequest):
             response_parts.append(types.Part.from_function_response(name=fc.name, response={"result": result}))
         contents.append(types.Content(role="user", parts=response_parts))
 
-    return {"answer": "I wasn't able to reach a final answer for that question — try rephrasing it or breaking it into a simpler question."}
+    return "I wasn't able to reach a final answer for that question — try rephrasing it or breaking it into a simpler question."
 
 
 class QueryRequest(BaseModel):
@@ -335,6 +377,8 @@ def health():
         "status": "ok",
         "campaigns_loaded": len(dt.get_dataframe()),
         "data_backend": dt.data_backend_name(),
+        "llm_provider": llm_adapter.provider.name,
+        "llm_model": llm_adapter.provider.model,
         "gemini_key_configured": rotator.configured,
         "gemini_keys_configured": len(rotator.clients),
     }

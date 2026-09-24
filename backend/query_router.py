@@ -202,6 +202,17 @@ COMPARATORS = {
 # than silently routed to an unrelated tool (e.g. "revenue by country").
 UNAVAILABLE_RE = _c(r"\bcountr(?:y|ies)\b|\bregions?\b|\bgeograph|\bcit(?:y|ies)\b|\blocations?\b|\bproducts?\b|\bsku\b"
                     r"|\blifetime value\b|\bltv\b|\bchurn\b")
+# Words a direct plan can't honour: qualitative judgements ("high spend", "underperforming"),
+# change over time ("is revenue growing") and relative dates ("last month" — the router has no
+# notion of "now"). Without this, e.g. "campaigns with high spend but low revenue" would be
+# answered with the all-time totals. Numeric thresholds ("ROAS above 8") are removed first.
+UNCERTAIN_RE = _c(
+    r"\b(?:high|low|underperform\w*|overperform\w*|poor\w*|weak|strong|good|bad|efficient|inefficient"
+    r"|wast\w*|expensive|cheap|profitable|unprofitable|better|worse|grow\w*|grew|declin\w*|drop\w*"
+    r"|decreas\w*|increas\w*|fell|fall\w*|rose|rising|improv\w*|worsen\w*|chang\w*)\b"
+    r"|\b(?:last|this|previous|past|next|current)\s+(?:month|year|quarter|week)s?\b"
+    r"|\byesterday\b|\btoday\b|\brecent\w*|\blatest\b|\bytd\b|\byear[- ]to[- ]date\b|\bso far\b"
+)
 DATA_VOCAB_RE = _c(r"\bcampaigns?\b|\bads?\b|\badvertis|\bmarketing\b|\bperform|\btrends?\b|\bdata(?:set)?\b"
                    r"|\bresults?\b|\bnumbers\b|\bkpis?\b|\bbudget|\baudiences?\b|\bcreatives?\b")
 
@@ -273,6 +284,7 @@ class Plan:
     calls: list = field(default_factory=list)
     message: str = None
     focus_metrics: list = field(default_factory=list)
+    reason: str = None  # why a question was not planned: unavailable_data / off_topic / uncertain / unresolved
 
 
 @dataclass
@@ -492,18 +504,23 @@ def classify_query(query: str) -> Plan:
     focus = _metric_names(f)
 
     if UNAVAILABLE_RE.search(f.text):
-        return Plan(Route.UNSUPPORTED, message="That information is not available in the current "
-                                              "MarketingIQ dataset. " + SUPPORTED_HINT)
+        return Plan(Route.UNSUPPORTED, reason="unavailable_data",
+                    message="That information is not available in the current MarketingIQ dataset. " + SUPPORTED_HINT)
     if not _has_data_vocab(f):
-        return Plan(Route.UNSUPPORTED, message="That question isn't about the MarketingIQ campaign data. "
-                                               + SUPPORTED_HINT)
+        return Plan(Route.UNSUPPORTED, reason="off_topic",
+                    message="That question isn't about the MarketingIQ campaign data. " + SUPPORTED_HINT)
     if EXPLANATION_RE.search(f.text):
         return Plan(Route.LLM_REQUIRED, calls=_plan_llm_context(f), focus_metrics=focus)
+
+    if UNCERTAIN_RE.search(THRESHOLD_RE.sub(" ", f.text)):
+        return Plan(Route.NEEDS_CLARIFICATION, reason="uncertain",
+                    message="That question needs a judgement or time reference I can't map to an exact "
+                            "figure. " + SUPPORTED_HINT)
 
     calls, clarification = _plan_direct(f)
     if calls:
         return Plan(Route.DIRECT_DATABASE, calls=calls, focus_metrics=focus)
-    return Plan(Route.NEEDS_CLARIFICATION,
+    return Plan(Route.NEEDS_CLARIFICATION, reason="unresolved",
                 message=clarification or "I couldn't match that to a specific metric or breakdown. " + SUPPORTED_HINT)
 
 
@@ -590,7 +607,7 @@ def route_query(query: str, filters: dict = None, explainer=None) -> dict:
                 response["llm"] = llm
             llm_status = response["llm"]["status"]
         else:
-            response = {**base, "message": plan.message, "llm_required": False}
+            response = {**base, "message": plan.message, "reason": plan.reason, "llm_required": False}
 
         elapsed = round((time.perf_counter() - started) * 1000, 2)
         response["elapsed_ms"] = elapsed
