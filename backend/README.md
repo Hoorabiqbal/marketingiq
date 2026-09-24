@@ -164,6 +164,9 @@ DuckDB (in-memory)     primary engine  ·  Pandas: automatic fallback + correctn
 
 - **Source of truth is still the CSV.** At startup it is read once with Pandas, and an
   in-memory DuckDB table is built from that same parsed data. There is no database file.
+  The parsed DataFrame is then released, so only DuckDB's copy stays in memory (with the
+  Pandas backend the DataFrame is kept, since it is the data). `dt.get_dataframe()` is for
+  tests and offline tools: with DuckDB it re-reads the CSV on each call.
   `/api/health` reports the active `data_backend`. Set `MARKETINGIQ_DATA_BACKEND=pandas` to
   use the Pandas backend instead; the app also falls back to it on its own (with a log
   line) if DuckDB can't start.
@@ -178,6 +181,44 @@ DuckDB (in-memory)     primary engine  ·  Pandas: automatic fallback + correctn
   `data_layer_golden.json`, which holds the original Pandas implementation's output for 51
   cases.
 - **Speed:** `benchmark_data_layer.py` measures each tool on either backend.
+
+### Performance and load testing
+
+Dev-only tools (`pip install -r requirements-dev.txt`, which adds `psutil`). No real Gemini or
+Groq call is ever made.
+
+```
+python perf_profile.py                        # startup phases, memory inventory, DuckDB ops,
+                                              # endpoint time split by stage (in-process)
+python perf_profile.py --threads 1,2,4,8      # DuckDB thread settings, interleaved rounds
+python loadtest.py --mode baseline            # sequential latency per request type, over HTTP
+python loadtest.py --mode direct              # DIRECT_DATABASE mix at 1/5/10/15/20 users
+python loadtest.py --mode llm --mock-delay-ms 1500 --requests 200   # LLM path, mocked provider
+```
+
+`loadtest.py` starts `loadtest_server.py`: the real app under uvicorn, with Gemini and Groq
+calls counted and refused, and optionally a fixed-delay mock provider. Each level sends the
+same fixed workload. Every response is compared with a reference answer taken before the load
+(so races or corrupted shared state show up as `wrong_answer`), the server must stay healthy
+after each level, and the provider counters must stay at 0. `--duckdb-threads N` overrides
+DuckDB's thread count so the setting can be re-measured on the deployment host.
+
+Measured on a 4-core laptop (server and load generator on the same machine; the laptop's speed
+varied by up to ~50% between sessions, so compare only interleaved runs):
+- Memory: about 150–160 MB RSS after startup, mostly libraries (pandas + DuckDB ~65 MB, FastAPI
+  / google-genai / httpx ~42 MB). The dataset is ~12 MB in DuckDB. Under sustained load RSS
+  settles around 180–235 MB; the Python heap and DuckDB's own memory stay flat, and the growth
+  slows over time (native allocator behaviour, not a Python leak).
+- `DIRECT_DATABASE`: 3–6 ms server time, 6–15 ms over HTTP; about 200–390 req/s at 5–20
+  concurrent users with no errors.
+- `LLM_REQUIRED` with a 1.5 s mock provider: about 15–35 ms of local work on top of the
+  provider time. Each explanation holds one of the server's 40 worker threads while the provider
+  answers, so real capacity for explanations is set by the provider's latency and quota.
+- DuckDB's thread setting (1, 2, 4, 8) made no consistent difference at this data size, so the
+  default is kept.
+- The router's entity index is built once at startup (`qr.warm_up()`) and under a lock. Before
+  that, simultaneous first requests after a cold start each ran the profiling query and could
+  exhaust DuckDB's 256 MB limit (HTTP 500s).
 
 ## Query Router (`/api/query`)
 

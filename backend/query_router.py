@@ -30,6 +30,7 @@ import inspect
 import json
 import logging
 import re
+import threading
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -231,12 +232,27 @@ SUPPORTED_HINT = ("Try asking about revenue, spend, profit, ROAS, ROI, CPA, CPC,
 # ---------------------------------------------------------------------------
 
 _entity_index = None
+# Built once. Without the lock, concurrent first requests (e.g. right after a cold start) each
+# ran the profiling query at the same time and could exhaust DuckDB's memory limit.
+_entity_index_lock = threading.Lock()
+
+
+def warm_up():
+    """Build the entity index at startup so no request pays for it."""
+    _get_entity_index()
 
 
 def _get_entity_index() -> list:
-    global _entity_index
     if _entity_index is not None:
         return _entity_index
+    with _entity_index_lock:
+        if _entity_index is None:
+            _build_entity_index()
+    return _entity_index
+
+
+def _build_entity_index():
+    global _entity_index
     try:
         fields = dt.list_available_fields()
     except RuntimeError:

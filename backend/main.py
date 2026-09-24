@@ -46,6 +46,7 @@ load_dotenv(APP_DIR / ".env")
 
 CSV_PATH = os.getenv("MARKETINGIQ_CSV_PATH", str(APP_DIR / ".." / "data" / "tech_advertising_campaigns_dataset.csv"))
 dt.load_data(CSV_PATH)
+qr.warm_up()  # router entity index, built once before the first request
 
 app = FastAPI(title="MarketingIQ AI Analyst")
 
@@ -375,7 +376,7 @@ def query(req: QueryRequest):
 def health():
     return {
         "status": "ok",
-        "campaigns_loaded": len(dt.get_dataframe()),
+        "campaigns_loaded": dt.row_count(),
         "data_backend": dt.data_backend_name(),
         "llm_provider": llm_adapter.provider.name,
         "llm_model": llm_adapter.provider.model,

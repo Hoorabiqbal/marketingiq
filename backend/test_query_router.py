@@ -260,6 +260,32 @@ def test_structured_log_line():
     assert "key" not in json.dumps(ok).lower()
 
 
+def test_entity_index_built_once_under_concurrent_cold_start():
+    """40 simultaneous first requests used to build the index 40 times at once and could exhaust
+    DuckDB's memory limit (most requests failed with DuckDB threads=1). It is now built once."""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    assert qr._entity_index is not None  # main.py warms it at startup
+    saved, qr._entity_index = qr._entity_index, None
+    con = dt.get_repository()._con
+    threads = con.execute("SELECT current_setting('threads')").fetchone()[0]
+    con.execute("SET threads = 1")  # the setting under which the old code failed most
+    barrier = threading.Barrier(40)
+
+    def first_request(_):
+        barrier.wait()
+        return qr.route_query("What is total revenue?")["result"]["revenue"]
+    try:
+        with patch.object(dt, "list_available_fields", wraps=dt.list_available_fields) as build, \
+                ThreadPoolExecutor(40) as pool:
+            revenues = list(pool.map(first_request, range(40)))
+        assert build.call_count == 1 and len(set(revenues)) == 1
+    finally:
+        con.execute(f"SET threads = {threads}")
+        if qr._entity_index is None:
+            qr._entity_index = saved
+
+
 if __name__ == "__main__":
     qr.logger.setLevel(logging.WARNING)  # keep the per-request INFO lines out of the test output
     tests = [(n, f) for n, f in list(globals().items()) if n.startswith("test_") and callable(f)]

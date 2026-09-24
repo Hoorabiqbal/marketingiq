@@ -224,6 +224,17 @@ def test_concurrent_queries_from_threads():
     assert all(r == expected for r in results)
 
 
+def test_duckdb_backend_keeps_no_duplicate_dataframe():
+    """DuckDB holds its own copy of the rows, so no parsed DataFrame is kept alongside it."""
+    _load("duckdb")
+    assert dt._df is None and dt.row_count() == 10000
+    reference = dt.get_dataframe()  # tests/tools only: a fresh parse, never cached
+    assert len(reference) == 10000 and dt._df is None and dt.get_dataframe() is not reference
+    _load("pandas")  # the Pandas backend keeps the DataFrame: it is the data
+    assert dt._df is not None and dt.get_dataframe() is dt._df and dt.row_count() == 10000
+    _load("duckdb")
+
+
 if __name__ == "__main__":
     tests = [(n, f) for n, f in list(globals().items()) if n.startswith("test_") and callable(f)]
     for name, fn in tests:

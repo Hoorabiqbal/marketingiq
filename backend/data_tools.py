@@ -19,7 +19,8 @@ import pandas as pd
 from campaign_repository import PandasCampaignRepository, create_repository
 
 CSV_PATH = None  # set by main.py at startup
-_df = None
+_df = None  # only for the Pandas backend (see load_data)
+_row_count = 0
 _repo = None
 
 # Maps the "dimension" names the AI is allowed to ask for onto real dataset columns.
@@ -57,24 +58,38 @@ CREATIVE_AGE_EDGES = [0, 15, 30, 45, 60, 90]
 CREATIVE_AGE_LABELS = ["0-15", "16-30", "31-45", "46-60", "61-90"]
 
 
-def load_data(csv_path: str, backend: str = None):
-    """Parse the CSV once, then build the analytical backend from that same parsed data
-    (so DuckDB and Pandas see identical values). backend: 'duckdb' (default) or 'pandas';
-    also settable via MARKETINGIQ_DATA_BACKEND."""
-    global _df, _repo, CSV_PATH
-    CSV_PATH = csv_path
+def _read_csv(csv_path: str) -> pd.DataFrame:
     df = pd.read_csv(csv_path)
     df["start_date"] = pd.to_datetime(df["start_date"])
     df["month"] = df["start_date"].dt.strftime("%Y-%m")
-    _repo = create_repository(df, backend or os.getenv("MARKETINGIQ_DATA_BACKEND", "duckdb"))
-    _df = df
     return df
 
 
+def load_data(csv_path: str, backend: str = None):
+    """Parse the CSV once, then build the analytical backend from that same parsed data
+    (so DuckDB and Pandas see identical values). backend: 'duckdb' (default) or 'pandas';
+    also settable via MARKETINGIQ_DATA_BACKEND.
+
+    DuckDB copies the rows into its own table, so the parsed DataFrame is kept only when the
+    repository is Pandas-backed (it then IS the data). No request path reads it."""
+    global _df, _repo, _row_count, CSV_PATH
+    CSV_PATH = csv_path
+    df = _read_csv(csv_path)
+    _repo = create_repository(df, backend or os.getenv("MARKETINGIQ_DATA_BACKEND", "duckdb"))
+    _row_count = len(df)
+    _df = df if _repo.name == "pandas" else None
+
+
+def row_count() -> int:
+    get_repository()
+    return _row_count
+
+
 def get_dataframe() -> pd.DataFrame:
-    if _df is None:
-        raise RuntimeError("Data not loaded — call load_data() at startup.")
-    return _df
+    """The dataset as a DataFrame, for tests and offline tools. With the DuckDB backend this
+    parses a fresh copy from the CSV on every call, so never use it on a request path."""
+    get_repository()
+    return _df if _df is not None else _read_csv(CSV_PATH)
 
 
 def get_repository():
