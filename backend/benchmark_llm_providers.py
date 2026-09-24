@@ -2,11 +2,13 @@
 Benchmark LLM providers on the LLM_REQUIRED path with identical inputs.
 
     python benchmark_llm_providers.py --providers qwen,gemini --out results.json
+    python benchmark_llm_providers.py --providers gemini,groq --out results.json   (needs GROQ_API_KEY)
 
 For each question: the Query Router classifies it (must be LLM_REQUIRED) and builds the
 compact analysis from the DuckDB data layer ONCE; that exact block goes to every provider
 through the LLM Adapter. Nothing else is sent. One call per question per provider (Gemini
-keeps its normal bounded 5xx retry), so a full run costs ~len(QUESTIONS) Gemini requests.
+and Groq keep their normal bounded 5xx retry), so a full run costs ~len(QUESTIONS) requests
+per hosted provider. Rate-limit (429) answers are recorded, never retried or worked around.
 
 Recorded per answer: latency (local analysis vs provider), success, length, and a numeric
 grounding check: every number in the answer is matched against the numbers present in the
@@ -18,6 +20,7 @@ While Qwen runs, a sampler records system RAM, Ollama process RAM, total CPU %, 
 responsiveness probe (how late a 50 ms timer fires — a proxy for UI stalls).
 """
 import argparse
+import hashlib
 import ctypes
 import json
 import logging
@@ -191,19 +194,25 @@ def main():
     ap.add_argument("--providers", default="qwen,gemini")
     ap.add_argument("--out", default="llm_benchmark_results.json")
     ap.add_argument("--gemini-pause", type=float, default=3.0, help="seconds between Gemini calls (free-tier RPM)")
+    ap.add_argument("--groq-pause", type=float, default=3.0, help="seconds between Groq calls (free-tier RPM/TPM)")
     args = ap.parse_args()
 
     import data_tools as dt
     import llm_providers
     import query_router as qr
     from gemini_rotator import GeminiKeyRotator, load_keys
-    from llm_adapter import LLMAdapter
+    from llm_adapter import LLMAdapter, serialize_analysis
     for name in ("marketingiq.query_router", "marketingiq.data"):
         logging.getLogger(name).setLevel(logging.WARNING)
-    qwen_logs = []
+    provider_logs = []  # provider-reported timings/usage and rate-limit events
     adapter_logger = logging.getLogger("marketingiq.llm_adapter")
     handler = logging.Handler()
-    handler.emit = lambda r: qwen_logs.append(json.loads(r.getMessage())) if "qwen_generation" in r.getMessage() else None
+
+    def capture(record):
+        msg = record.getMessage()
+        if any(e in msg for e in ('"qwen_generation"', '"groq_generation"', '"groq_rate_limited"')):
+            provider_logs.append(json.loads(msg))
+    handler.emit = capture
     adapter_logger.addHandler(handler)
 
     dt.load_data(str(HERE / ".." / "data" / "tech_advertising_campaigns_dataset.csv"))
@@ -218,9 +227,11 @@ def main():
         llm_input = {"filters_applied": r["filters_applied"], "focus_metrics": r["focus_metrics"], "results": r["analysis"]}
         cases.append({"question": q, "tools": [a["tool"] for a in r["analysis"]], "local_analysis_ms": round(local_ms, 1),
                       "analysis_bytes": r["llm_context_bytes"], "llm_input": llm_input,
+                      "analysis_sha256": hashlib.sha256(serialize_analysis(llm_input).encode()).hexdigest()[:16],
                       "supplied_numbers": analysis_numbers(llm_input)})
 
-    results = {"questions": [{k: c[k] for k in ("question", "tools", "local_analysis_ms", "analysis_bytes")} for c in cases],
+    results = {"questions": [{k: c[k] for k in ("question", "tools", "local_analysis_ms", "analysis_bytes", "analysis_sha256")}
+                             for c in cases],
                "providers": {}}
     rotator = GeminiKeyRotator(load_keys())
 
@@ -234,9 +245,9 @@ def main():
             sampler = Sampler()
             sampler.start()
         for i, c in enumerate(cases):
-            if name == "gemini" and i:
-                time.sleep(args.gemini_pause)
-            qwen_logs.clear()
+            if name in ("gemini", "groq") and i:
+                time.sleep(args.gemini_pause if name == "gemini" else args.groq_pause)
+            provider_logs.clear()
             t = time.perf_counter()
             out = adapter.explain(c["question"], c["llm_input"])
             provider_ms = (time.perf_counter() - t) * 1000
@@ -245,8 +256,9 @@ def main():
                      "provider_ms": round(provider_ms, 1), "local_analysis_ms": c["local_analysis_ms"],
                      "words": len(text.split()), "chars": len(text), "text": text,
                      **check_numbers(text, c["supplied_numbers"])}
-            if qwen_logs:
-                entry["ollama"] = qwen_logs[-1]
+            for log in provider_logs:
+                key = {"qwen_generation": "ollama", "groq_generation": "groq_usage"}.get(log["event"], "rate_limit")
+                entry[key] = log
             run["answers"].append(entry)
             print(f"[{name}] {i + 1}/{len(cases)} {out['status']:5} {provider_ms:8.0f} ms  "
                   f"words={entry['words']:3}  numbers={entry['numbers_cited']:2} unsupported={entry['unsupported']}",
@@ -264,7 +276,8 @@ def main():
                           "words_median": statistics.median([a["words"] for a in run["answers"]]),
                           "numbers_cited": sum(a["numbers_cited"] for a in run["answers"]),
                           "numbers_supported": sum(a["supported"] for a in run["answers"]),
-                          "numbers_unsupported": sum(len(a["unsupported"]) for a in run["answers"])}
+                          "numbers_unsupported": sum(len(a["unsupported"]) for a in run["answers"]),
+                          "rate_limited": sum(a["error"] == "rate_limited" for a in run["answers"])}
         results["providers"][name] = run
         print(f"[{name}] summary: {run['summary']}", flush=True)
 

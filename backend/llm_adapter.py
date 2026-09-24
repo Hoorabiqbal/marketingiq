@@ -46,6 +46,7 @@ Rules, no exceptions:
      "one possible reason"). The data shows correlation only — never claim a proven cause.
 4. If filters_applied is non-empty, say the figures reflect that filtered view.
 5. Be concise: at most about 150 words, plain business language, no preamble or sign-off.
+   No generic marketing advice unless the question asks for recommendations.
 """
 
 
