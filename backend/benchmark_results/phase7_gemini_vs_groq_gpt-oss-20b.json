@@ -1,0 +1,530 @@
+{
+ "questions": [
+  {
+   "question": "Why is TikTok performing better than other platforms?",
+   "tools": [
+    "rank_dimension",
+    "get_totals"
+   ],
+   "local_analysis_ms": 51.6,
+   "analysis_bytes": 2196,
+   "analysis_sha256": "ae00577bab005472"
+  },
+  {
+   "question": "What might explain the ROAS difference between platforms?",
+   "tools": [
+    "rank_dimension",
+    "get_totals"
+   ],
+   "local_analysis_ms": 11.2,
+   "analysis_bytes": 2196,
+   "analysis_sha256": "52a70a169fc4e100"
+  },
+  {
+   "question": "Explain the decline in CTR.",
+   "tools": [
+    "get_creative_fatigue",
+    "get_totals"
+   ],
+   "local_analysis_ms": 10.9,
+   "analysis_bytes": 581,
+   "analysis_sha256": "937ae4b75385c4b9"
+  },
+  {
+   "question": "Explain what the monthly revenue trend means.",
+   "tools": [
+    "trend_over_time",
+    "get_totals"
+   ],
+   "local_analysis_ms": 8.2,
+   "analysis_bytes": 1515,
+   "analysis_sha256": "ebb49325226d60b3"
+  },
+  {
+   "question": "Why does TikTok have a higher ROAS than LinkedIn?",
+   "tools": [
+    "rank_dimension",
+    "get_totals"
+   ],
+   "local_analysis_ms": 10.0,
+   "analysis_bytes": 2196,
+   "analysis_sha256": "52a70a169fc4e100"
+  },
+  {
+   "question": "Why do campaigns with spend over 10000 have lower ROAS?",
+   "tools": [
+    "filter_campaigns",
+    "get_totals"
+   ],
+   "local_analysis_ms": 9.7,
+   "analysis_bytes": 2414,
+   "analysis_sha256": "cf432ac6e9d110e1"
+  },
+  {
+   "question": "Give me a business interpretation of overall performance.",
+   "tools": [
+    "rank_dimension",
+    "get_totals"
+   ],
+   "local_analysis_ms": 10.6,
+   "analysis_bytes": 2196,
+   "analysis_sha256": "ae00577bab005472"
+  },
+  {
+   "question": "What insights can you draw about device performance?",
+   "tools": [
+    "rank_dimension",
+    "get_totals"
+   ],
+   "local_analysis_ms": 10.0,
+   "analysis_bytes": 1346,
+   "analysis_sha256": "bbf04ab5a914022b"
+  },
+  {
+   "question": "Explain how creative age affects CTR.",
+   "tools": [
+    "rank_dimension",
+    "get_creative_fatigue",
+    "get_totals"
+   ],
+   "local_analysis_ms": 21.1,
+   "analysis_bytes": 2431,
+   "analysis_sha256": "7fc064af9a230a5e"
+  },
+  {
+   "question": "Why is CPA higher for some campaign objectives?",
+   "tools": [
+    "rank_dimension",
+    "get_totals"
+   ],
+   "local_analysis_ms": 11.0,
+   "analysis_bytes": 1937,
+   "analysis_sha256": "078c7dae59151df7"
+  }
+ ],
+ "providers": {
+  "gemini": {
+   "model": "gemini-3.6-flash",
+   "system_before": {
+    "used_gb": 7.35,
+    "avail_gb": 7.25,
+    "load_pct": 50
+   },
+   "answers": [
+    {
+     "question": "Why is TikTok performing better than other platforms?",
+     "status": "ok",
+     "error": null,
+     "provider_ms": 7609.5,
+     "local_analysis_ms": 51.6,
+     "words": 113,
+     "chars": 745,
+     "text": "**What the data shows:**\n* TikTok leads all platforms in ROAS (11.18) and ROI (1,018.4%), generating $34.35M in revenue on $3.07M spend across 1,213 campaigns.\n* It achieved the lowest cost per click (CPC at $1.29) and lowest cost per acquisition (CPA at $37.60) of any platform.\n* TikTok's conversion rate (3.44%) is lower than Facebook (4.26%), Instagram (4.15%), Google Ads (4.99%), and LinkedIn (5.00%).\n\n**Interpretation:**\n* TikTok\u2019s higher ROAS and ROI appear correlated with lower traffic costs rather than superior conversion efficiency. \n* Lower media acquisition costs (CPC/CPA) on TikTok may allow campaigns to generate higher overall profitability despite converting users at a lower rate than platforms like Facebook or Google Ads.",
+     "numbers_cited": 12,
+     "supported": 12,
+     "unsupported": []
+    },
+    {
+     "question": "What might explain the ROAS difference between platforms?",
+     "status": "ok",
+     "error": null,
+     "provider_ms": 8783.3,
+     "local_analysis_ms": 11.2,
+     "words": 143,
+     "chars": 980,
+     "text": "**What the data shows:**\nROAS varies significantly across platforms, led by TikTok (11.18) and Facebook (10.39), with Google Ads (5.43) and LinkedIn (3.31) trailing. Higher-ROAS channels feature lower traffic and acquisition costs: TikTok has a $1.29 CPC and $37.60 CPA, whereas LinkedIn ($6.55 CPC, $131.11 CPA) and Google Ads ($4.03 CPC, $80.77 CPA) are substantially more expensive. Notably, LinkedIn (5.00%) and Google Ads (4.99%) maintain higher conversion rates than TikTok (3.44%).\n\n**Interpretation:**\n* Lower ad unit costs (CPC/CPA) on social platforms like TikTok and Facebook may drive higher return on spend, even with lower conversion rates.\n* Higher ad auction competition on channels like LinkedIn and Google Ads could be inflating acquisition costs, which suppresses ROAS despite strong user conversion intent.\n* Differing audience demographics or average order values across platforms might also explain revenue variation, though order value data is not provided.",
+     "numbers_cited": 13,
+     "supported": 13,
+     "unsupported": []
+    },
+    {
+     "question": "Explain the decline in CTR.",
+     "status": "ok",
+     "error": null,
+     "provider_ms": 6127.2,
+     "local_analysis_ms": 10.9,
+     "words": 88,
+     "chars": 528,
+     "text": "**What the data shows:**\n* Overall average CTR across all campaigns is 2.164%.\n* By ad age, CTR remains higher early on: 2.64% (0\u201315 days), 2.65% (16\u201330 days), and peaks at 2.73% (31\u201345 days).\n* CTR drops sharply for older ads, falling to 2.01% (46\u201360 days) and 1.47% (61\u201390 days).\n\n**Interpretation:**\nThe decline in CTR after 45 days may be driven by creative fatigue or audience saturation as ad creative stays active longer. Audiences could be seeing the same ad assets repeatedly, leading to decreased engagement over time.",
+     "numbers_cited": 16,
+     "supported": 16,
+     "unsupported": []
+    },
+    {
+     "question": "Explain what the monthly revenue trend means.",
+     "status": "ok",
+     "error": null,
+     "provider_ms": 16775.9,
+     "local_analysis_ms": 8.2,
+     "words": 121,
+     "chars": 865,
+     "text": "**What the data shows:**\n* Monthly revenue runs from January 2024 to January 2026, totaling $284,157,706.47.\n* Revenue surges significantly in Q4 of both years, reaching a peak of $21,100,585.27 in December 2024 and remaining elevated through Q4 2025 ($15,533,025.41 in October, $15,806,957.74 in November, and $16,539,059.65 in December).\n* Mid-year periods experience dips, reaching lows of $7,941,396.61 in June 2024 and $7,510,123.84 in July 2025.\n* Revenue drops immediately following each December surge, declining to $13,707,323.10 in January 2025 and $10,927,873.88 in January 2026.\n\n**Interpretation:**\n* The recurring late-year surges could indicate strong end-of-year or holiday seasonality.\n* Mid-year revenue drops may point to a summer slowdown in customer purchasing activity.\n* Post-December declines might reflect typical post-holiday demand reset.",
+     "numbers_cited": 17,
+     "supported": 17,
+     "unsupported": []
+    },
+    {
+     "question": "Why does TikTok have a higher ROAS than LinkedIn?",
+     "status": "ok",
+     "error": null,
+     "provider_ms": 8525.4,
+     "local_analysis_ms": 10.0,
+     "words": 139,
+     "chars": 948,
+     "text": "**What the data shows:**\n* **ROAS:** TikTok achieved a ROAS of 11.184, compared to LinkedIn's 3.305.\n* **Spend & Revenue:** TikTok generated $34,349,996.88 in revenue on $3,071,280.92 in spend, while LinkedIn generated $33,315,694.35 in revenue on $10,080,872.61 in spend.\n* **Cost Efficiency:** TikTok had a much lower CPC ($1.293 vs. $6.549) and CPA ($37.60 vs. $131.11).\n* **Engagement:** TikTok had a higher CTR (2.373% vs. 1.926%), whereas LinkedIn had a higher conversion rate (4.995% vs. 3.439%).\n\nThe underlying audience, ad format, or qualitative reasons for these cost differences cannot be answered from the available data.\n\n**Interpretation:**\nTikTok's higher ROAS may be driven primarily by its significantly lower ad acquisition costs (CPC and CPA). LinkedIn could be capturing higher-intent users (reflected in its higher conversion rate), but its substantially higher ad costs may reduce overall spend efficiency compared to TikTok.",
+     "numbers_cited": 14,
+     "supported": 14,
+     "unsupported": []
+    },
+    {
+     "question": "Why do campaigns with spend over 10000 have lower ROAS?",
+     "status": "ok",
+     "error": null,
+     "provider_ms": 15460.6,
+     "local_analysis_ms": 9.7,
+     "words": 135,
+     "chars": 859,
+     "text": "**What the data shows:**\n* The overall portfolio ROAS across all 10,000 campaigns is 6.54.\n* There are 1,107 campaigns with spend exceeding 10,000. In a sample of 10 high-spend campaigns, ROAS ranges widely from 0.30 to 13.22, with 5 of the 10 campaigns returning a ROAS below 1.0.\n* The dataset does not contain aggregate summary metrics (such as overall average ROAS, CPA, or conversion rate) specifically for the 1,107 high-spend campaigns, so the exact root cause cannot be fully determined from the available data.\n\n**Interpretation:**\n* Larger budgets may be directed toward top-of-funnel objectives like Brand Awareness, which in the sample data correspond with lower immediate ROAS (ranging from 0.30 to 4.22).\n* Higher spend levels could lead to audience saturation or diminishing returns, which might increase CPAs and lower overall ROAS efficiency.",
+     "numbers_cited": 12,
+     "supported": 12,
+     "unsupported": []
+    },
+    {
+     "question": "Give me a business interpretation of overall performance.",
+     "status": "ok",
+     "error": null,
+     "provider_ms": 10161.5,
+     "local_analysis_ms": 10.6,
+     "words": 136,
+     "chars": 900,
+     "text": "**What the data shows:**\nAcross 10,000 overall campaigns, total spend of $43.46M generated $284.16M in revenue ($240.70M profit), delivering an overall ROAS of 6.54 (553.9% ROI) at a $66.27 CPA.\n\nBy platform:\n* **TikTok** led in efficiency with the highest ROAS (11.18) and lowest CPA ($37.60) on $3.07M spend.\n* **Google Ads** captured the highest spend ($18.01M) and revenue ($97.85M), yielding a 5.43 ROAS.\n* **LinkedIn** had the lowest ROAS (3.31) and highest CPA ($131.11) across $10.08M in spend.\n\n**Interpretation:**\n* TikTok and Facebook may benefit from lower media acquisition costs (CPCs under $1.76), driving efficient direct returns.\n* Google Ads' lower ROAS despite high volume could indicate competitive keyword bidding or broader keyword targeting.\n* LinkedIn\u2019s lower performance metrics might stem from higher ad costs inherent to B2B targeting (CPC $6.55) or longer purchase cycles.",
+     "numbers_cited": 18,
+     "supported": 17,
+     "unsupported": [
+      "$1.76"
+     ]
+    },
+    {
+     "question": "What insights can you draw about device performance?",
+     "status": "ok",
+     "error": null,
+     "provider_ms": 9374.9,
+     "local_analysis_ms": 10.0,
+     "words": 138,
+     "chars": 951,
+     "text": "**What the data shows:**\n* **Desktop** is the top-performing device by efficiency, achieving a 10.40 ROAS, $42.60 CPA, and 6.68% conversion rate, generating $176.99M revenue on $17.02M spend.\n* **Mobile** received the highest share of spend ($22.52M) but yielded the lowest efficiency, with a 3.86 ROAS, $110.60 CPA, and 2.56% conversion rate ($86.86M revenue).\n* **Tablet** generated $20.31M revenue on $3.91M spend, returning a 5.19 ROAS, $74.57 CPA, and 3.93% conversion rate.\n* CPC is virtually identical across all three devices, ranging between $2.84 (Desktop/Mobile) and $2.93 (Tablet).\n\n**Interpretation:**\n* Desktop users may experience a smoother checkout flow or have higher purchase intent, leading to stronger conversion rates despite similar click costs.\n* Mobile's lower conversion efficiency could reflect user friction on smaller screens, or users may use mobile primarily for discovery while completing final transactions on desktop.",
+     "numbers_cited": 17,
+     "supported": 17,
+     "unsupported": []
+    },
+    {
+     "question": "Explain how creative age affects CTR.",
+     "status": "ok",
+     "error": null,
+     "provider_ms": 6846.0,
+     "local_analysis_ms": 21.1,
+     "words": 111,
+     "chars": 699,
+     "text": "**What the data shows:**\nBased on the creative fatigue data:\n* **0\u201315 days:** 2.64% CTR\n* **16\u201330 days:** 2.65% CTR\n* **31\u201345 days:** 2.73% CTR (highest)\n* **46\u201360 days:** 2.01% CTR\n* **61\u201390 days:** 1.47% CTR\n\nAcross all campaigns, the average CTR is 2.164%.\n\n**Interpretation:**\nCTR increases slightly during the first 45 days of a creative's lifecycle, peaking at 2.73%. This initial stability and growth may occur because ad platforms take time to optimize delivery to the most responsive audiences. The sharp drop after 45 days\u2014falling to 1.47% by 61\u201390 days\u2014could indicate creative fatigue, where target audiences grow accustomed to the visual assets and become less likely to click over time.",
+     "numbers_cited": 21,
+     "supported": 21,
+     "unsupported": []
+    },
+    {
+     "question": "Why is CPA higher for some campaign objectives?",
+     "status": "ok",
+     "error": null,
+     "provider_ms": 6035.3,
+     "local_analysis_ms": 11.0,
+     "words": 124,
+     "chars": 830,
+     "text": "**What the data shows:**\n* CPA varies significantly by campaign objective, ranging from $110.61 for Brand Awareness to $53.20 for Conversions.\n* Brand Awareness has the highest CPA ($110.61) and the lowest conversion rate (2.481%), despite a lower CPC ($2.744).\n* Engagement records a CPA of $84.01 with a 3.248% conversion rate.\n* Conversions achieves the lowest CPA ($53.20) and highest conversion rate (5.452%), despite having a slightly higher CPC ($2.900).\n\n**Interpretation:**\n* Objectives like Brand Awareness may focus on broad audience reach rather than immediate action, which could lead to lower conversion rates and higher acquisition costs per conversion.\n* Objectives like Conversions and Lead Generation may target users with higher purchasing intent, where higher conversion rates could help lower the overall CPA.",
+     "numbers_cited": 10,
+     "supported": 10,
+     "unsupported": []
+    }
+   ],
+   "system_after": {
+    "used_gb": 6.31,
+    "avail_gb": 8.29,
+    "load_pct": 43
+   },
+   "summary": {
+    "success": "10/10",
+    "provider_ms_median": 8654.3,
+    "provider_ms_min": 6035.3,
+    "provider_ms_max": 16775.9,
+    "words_median": 129.5,
+    "numbers_cited": 150,
+    "numbers_supported": 149,
+    "numbers_unsupported": 1,
+    "rate_limited": 0
+   }
+  },
+  "groq": {
+   "model": "openai/gpt-oss-20b",
+   "system_before": {
+    "used_gb": 6.31,
+    "avail_gb": 8.29,
+    "load_pct": 43
+   },
+   "answers": [
+    {
+     "question": "Why is TikTok performing better than other platforms?",
+     "status": "ok",
+     "error": null,
+     "provider_ms": 760.9,
+     "local_analysis_ms": 51.6,
+     "words": 125,
+     "chars": 821,
+     "text": "**What the data shows:**  \n- TikTok has the highest ROAS (11.184) of all platforms, followed by Facebook (10.386) and Instagram (9.113).  \n- TikTok\u2019s CPA is lowest (37.6) and CPC is lowest (1.293).  \n- TikTok\u2019s CTR (2.373%) and conversion rate (3.439%) are higher than the overall averages (CTR 2.164%, conversion rate 4.296%).  \n- TikTok\u2019s profit margin (31278715.96) is the largest among the six platforms.\n\n**Interpretation:**  \n- The lower cost per click and cost per acquisition suggest TikTok\u2019s ad inventory is cheaper or more efficient for the campaigns run.  \n- Higher click\u2011through and conversion rates indicate that TikTok\u2019s audience may be more engaged or better matched to the campaign creatives.  \n- These factors together drive the superior ROAS and profit performance on TikTok compared to other platforms.",
+     "numbers_cited": 10,
+     "supported": 10,
+     "unsupported": [],
+     "groq_usage": {
+      "event": "groq_generation",
+      "model": "openai/gpt-oss-20b",
+      "prompt_tokens": 1085,
+      "completion_tokens": 214,
+      "queue_time_s": 0.329964064,
+      "total_time_s": 0.294630277,
+      "finish_reason": "stop"
+     }
+    },
+    {
+     "question": "What might explain the ROAS difference between platforms?",
+     "status": "ok",
+     "error": null,
+     "provider_ms": 1044.4,
+     "local_analysis_ms": 11.2,
+     "words": 152,
+     "chars": 1063,
+     "text": "**What the data shows:**  \n- TikTok: ROAS\u202f11.18 (spend\u202f$3,071,281\u202f\u2192\u202frevenue\u202f$34,349,997)  \n- Facebook: ROAS\u202f10.39 (spend\u202f$6,815,377\u202f\u2192\u202frevenue\u202f$70,786,373)  \n- Instagram: ROAS\u202f9.11 (spend\u202f$2,967,182\u202f\u2192\u202frevenue\u202f$27,041,358)  \n- Twitter: ROAS\u202f8.28 (spend\u202f$2,514,105\u202f\u2192\u202frevenue\u202f$20,815,486)  \n- Google Ads: ROAS\u202f5.43 (spend\u202f$18,006,844\u202f\u2192\u202frevenue\u202f$97,848,799)  \n- LinkedIn: ROAS\u202f3.31 (spend\u202f$10,080,873\u202f\u2192\u202frevenue\u202f$33,315,694)  \n\n**Interpretation (hypotheses):**  \n- Higher ROAS on TikTok and Facebook may reflect more effective ad creative or audience targeting that drives higher conversion rates (TikTok\u202f3.44%, Facebook\u202f4.26%) compared to LinkedIn (4.99%) and Google Ads (4.99%).  \n- Lower ROAS on LinkedIn and Google Ads could be due to higher cost per acquisition (LinkedIn\u202f$131.11, Google Ads\u202f$80.77) and higher CPC (LinkedIn\u202f$6.55, Google Ads\u202f$4.03), suggesting more expensive traffic that still converts at similar rates.  \n- Platform\u2011specific user intent and ad placement formats likely influence the cost\u2011efficiency balance, leading to the observed ROAS spread.",
+     "numbers_cited": 26,
+     "supported": 26,
+     "unsupported": [],
+     "groq_usage": {
+      "event": "groq_generation",
+      "model": "openai/gpt-oss-20b",
+      "prompt_tokens": 1088,
+      "completion_tokens": 386,
+      "queue_time_s": 0.422220972,
+      "total_time_s": 0.49625123,
+      "finish_reason": "stop"
+     }
+    },
+    {
+     "question": "Explain the decline in CTR.",
+     "status": "ok",
+     "error": null,
+     "provider_ms": 1090.4,
+     "local_analysis_ms": 10.9,
+     "words": 151,
+     "chars": 932,
+     "text": "**What the data shows:**  \n- Overall campaign CTR is 2.164%.  \n- Age\u2011segment CTRs: 0\u201115\u202f%\u202f=\u202f2.64, 16\u201130\u202f%\u202f=\u202f2.65, 31\u201145\u202f%\u202f=\u202f2.73, 46\u201160\u202f%\u202f=\u202f2.01, 61\u201190\u202f%\u202f=\u202f1.47.  \n- These figures reflect the current, unfiltered view of all 10,000 campaigns.\n\n**Interpretation:**  \n- The overall CTR is lower than the peak values seen in the 0\u201145 age ranges, suggesting that the audience segments that historically drove higher engagement (younger users) are now receiving fewer clicks relative to impressions.  \n- The steep drop in CTR for the 46\u201160 and 61\u201190 groups indicates that creative fatigue or less relevant messaging may be affecting older audiences.  \n- One possible reason for the overall decline is that the creative mix has become less resonant with the broader audience, especially as the proportion of impressions served to older age groups increases.  \n\nThese are correlations; further analysis would be needed to confirm causation.",
+     "numbers_cited": 21,
+     "supported": 21,
+     "unsupported": [],
+     "groq_usage": {
+      "event": "groq_generation",
+      "model": "openai/gpt-oss-20b",
+      "prompt_tokens": 544,
+      "completion_tokens": 287,
+      "queue_time_s": 0.383403381,
+      "total_time_s": 0.353933499,
+      "finish_reason": "stop"
+     }
+    },
+    {
+     "question": "Explain what the monthly revenue trend means.",
+     "status": "ok",
+     "error": null,
+     "provider_ms": 704.5,
+     "local_analysis_ms": 8.2,
+     "words": 139,
+     "chars": 830,
+     "text": "**What the data shows:**  \n- Revenue fluctuates month\u2011to\u2011month, with a low of\u202f$7.94\u202fM in June\u202f2024 and a high of\u202f$21.10\u202fM in December\u202f2024.  \n- After the December peak, revenue drops to\u202f$13.47\u202fM in January\u202f2025, then rises again to\u202f$15.53\u202fM in October\u202f2025, peaking at\u202f$16.54\u202fM in November\u202f2025.  \n- The trend from January\u202f2026 shows a decline to\u202f$10.93\u202fM.\n\n**Interpretation:**  \n- The sharp December 2024 spike may reflect holiday\u2011season demand or a large campaign push.  \n- The subsequent dip in January 2025 could indicate a post\u2011holiday slowdown or campaign budget reallocation.  \n- The rebound in late 2025 suggests a successful mid\u2011year strategy or seasonal lift.  \n- The January 2026 drop may signal the end of a promotional period or shifting market conditions.  \n\nThese figures reflect the unfiltered view of the dataset.",
+     "numbers_cited": 16,
+     "supported": 16,
+     "unsupported": [],
+     "groq_usage": {
+      "event": "groq_generation",
+      "model": "openai/gpt-oss-20b",
+      "prompt_tokens": 862,
+      "completion_tokens": 242,
+      "queue_time_s": 0.190221125,
+      "total_time_s": 0.369721336,
+      "finish_reason": "stop"
+     }
+    },
+    {
+     "question": "Why does TikTok have a higher ROAS than LinkedIn?",
+     "status": "ok",
+     "error": null,
+     "provider_ms": 698.6,
+     "local_analysis_ms": 10.0,
+     "words": 107,
+     "chars": 766,
+     "text": "**What the data shows:**  \n- TikTok: ROAS\u202f=\u202f11.184, spend\u202f$3,071,280.92, revenue\u202f$34,349,996.88, conversions\u202f81,687.  \n- LinkedIn: ROAS\u202f=\u202f3.305, spend\u202f$10,080,872.61, revenue\u202f$33,315,694.35, conversions\u202f76,887.  \n- The figures reflect the full, unfiltered dataset (filters_applied\u202f=\u202f{}).\n\n**Interpretation:**  \n- TikTok\u2019s ROAS is roughly 3.4 times higher than LinkedIn\u2019s.  \n- TikTok generates more revenue per dollar spent, despite a lower spend and slightly higher conversions.  \n- LinkedIn\u2019s spend is three times higher but yields only about the same revenue, indicating a lower efficiency of spend.  \n- Possible reasons include differences in audience targeting, ad format effectiveness, or cost structures, but the data only shows the correlation, not causation.",
+     "numbers_cited": 9,
+     "supported": 9,
+     "unsupported": [],
+     "groq_usage": {
+      "event": "groq_generation",
+      "model": "openai/gpt-oss-20b",
+      "prompt_tokens": 1091,
+      "completion_tokens": 222,
+      "queue_time_s": 0.297400118,
+      "total_time_s": 0.285653644,
+      "finish_reason": "stop"
+     }
+    },
+    {
+     "question": "Why do campaigns with spend over 10000 have lower ROAS?",
+     "status": "ok",
+     "error": null,
+     "provider_ms": 789.2,
+     "local_analysis_ms": 9.7,
+     "words": 159,
+     "chars": 1074,
+     "text": "**What the data shows:**  \n- Among the 1,107 campaigns with spend\u202f>\u202f$10,000, the average ROAS is 6.539 (overall dataset).  \n- The sample list includes campaigns with ROAS ranging from 0.3 to 13.22; many high\u2011spend campaigns have low ROAS (e.g., 0.3, 0.54, 0.67).  \n- High\u2011spend campaigns also show higher CPA (e.g., 769.38, 476.89, 558.0) and lower conversion rates (0.45\u20131.51) compared to the overall average conversion rate of 4.296%.\n\n**Interpretation:**  \n- One possible reason is that larger budgets may be allocated to broader or less targeted objectives (e.g., Brand Awareness) that drive impressions but not conversions, leading to lower ROAS.  \n- Higher spend could also be associated with higher CPA, suggesting diminishing returns as budgets increase.  \n- Campaigns with very high ROAS (e.g., 13.22 on Twitter) are exceptions, possibly due to highly efficient targeting or lower cost per conversion.  \n\nThese observations suggest that simply increasing spend does not guarantee higher ROAS; budget allocation and campaign objectives likely play significant roles.",
+     "numbers_cited": 15,
+     "supported": 15,
+     "unsupported": [],
+     "groq_usage": {
+      "event": "groq_generation",
+      "model": "openai/gpt-oss-20b",
+      "prompt_tokens": 1140,
+      "completion_tokens": 279,
+      "queue_time_s": 0.33049718,
+      "total_time_s": 0.340494143,
+      "finish_reason": "stop"
+     }
+    },
+    {
+     "question": "Give me a business interpretation of overall performance.",
+     "status": "ok",
+     "error": null,
+     "provider_ms": 1093.7,
+     "local_analysis_ms": 10.6,
+     "words": 186,
+     "chars": 1161,
+     "text": "**What the data shows:**  \n- Total campaigns: 10\u202f000  \n- Spend: $43\u202f455\u202f661.79  \n- Revenue: $284\u202f157\u202f706.47  \n- Profit: $240\u202f702\u202f044.68  \n- Conversions: 655\u202f688  \n- Clicks: 15\u202f264\u202f361  \n- Impressions: 705\u202f392\u202f230  \n- ROAS: 6.54\u202f\u00d7 (ROI\u202f\u2248\u202f554\u202f%)  \n- CPA: $66.27, CPC: $2.85, CTR: 2.16\u202f%, conversion rate: 4.30\u202f%.  \n\n**Interpretation:**  \n- The overall ROAS of 6.54 indicates that, on average, each dollar spent generates $6.54 in revenue, a strong return for the portfolio.  \n- The high ROI (\u2248\u202f554\u202f%) and profit margin suggest efficient spend allocation across campaigns.  \n- The conversion rate of 4.30\u202f% and CPA of $66.27 are within typical ranges for paid media, indicating effective audience targeting.  \n- Click\u2011through rate (2.16\u202f%) and CPC ($2.85) are moderate; improving ad relevance could lower CPC further.  \n- Platform\u2011level analysis shows TikTok and Facebook driving the most revenue and profit, while LinkedIn has the lowest ROAS, suggesting a need to reassess spend on that channel.  \n\nOverall, the campaign mix delivers solid returns, but there is room to optimize cost\u2011per\u2011click and conversion efficiency, especially on lower\u2011performing platforms.",
+     "numbers_cited": 31,
+     "supported": 15,
+     "unsupported": [
+      "$43",
+      "455",
+      "661.79",
+      "$284",
+      "157",
+      "706.47",
+      "$240",
+      "702",
+      "044.68",
+      "655",
+      "688",
+      "15",
+      "264",
+      "361",
+      "705",
+      "392"
+     ],
+     "groq_usage": {
+      "event": "groq_generation",
+      "model": "openai/gpt-oss-20b",
+      "prompt_tokens": 1084,
+      "completion_tokens": 342,
+      "queue_time_s": 0.383456833,
+      "total_time_s": 0.404847893,
+      "finish_reason": "stop"
+     }
+    },
+    {
+     "question": "What insights can you draw about device performance?",
+     "status": "ok",
+     "error": null,
+     "provider_ms": 1267.4,
+     "local_analysis_ms": 10.0,
+     "words": 171,
+     "chars": 1187,
+     "text": "**What the data shows:**  \n- **Desktop**: 3,556 campaigns, $17,022,756 spend, $176,989,571 revenue, ROAS 10.40, CPA $42.60, CPC $2.84, CTR 2.50%, conversion rate 6.68%.  \n- **Tablet**: 1,014 campaigns, $3,913,693 spend, $20,311,261 revenue, ROAS 5.19, CPA $74.57, CPC $2.93, CTR 1.91%, conversion rate 3.93%.  \n- **Mobile**: 5,430 campaigns, $22,519,212 spend, $86,856,875 revenue, ROAS 3.86, CPA $110.60, CPC $2.84, CTR 2.01%, conversion rate 2.56%.  \n- Overall totals: 10,000 campaigns, $43,455,662 spend, $284,157,706 revenue, ROAS 6.54, CPA $66.27, CPC $2.85, CTR 2.16%, conversion rate 4.30%.\n\n**Interpretation:**  \n- Desktop delivers the highest ROAS and lowest CPA, suggesting it is the most profitable device.  \n- Tablet shows moderate ROAS but higher CPA than Desktop, indicating less efficient spend.  \n- Mobile has the lowest ROAS and highest CPA, implying it is the least efficient device in this dataset.  \n- Click\u2011through rates are similar across devices, but conversion rates drop from Desktop to Mobile, which may explain the ROAS differences.  \n- The overall campaign mix is dominated by Mobile (54% of campaigns), yet Desktop still outperforms in profitability metrics.",
+     "numbers_cited": 33,
+     "supported": 32,
+     "unsupported": [
+      "54"
+     ],
+     "groq_usage": {
+      "event": "groq_generation",
+      "model": "openai/gpt-oss-20b",
+      "prompt_tokens": 790,
+      "completion_tokens": 385,
+      "queue_time_s": 0.384683038,
+      "total_time_s": 0.445162344,
+      "finish_reason": "stop"
+     }
+    },
+    {
+     "question": "Explain how creative age affects CTR.",
+     "status": "ok",
+     "error": null,
+     "provider_ms": 804.6,
+     "local_analysis_ms": 21.1,
+     "words": 131,
+     "chars": 813,
+     "text": "**What the data shows:**  \n- Overall CTR across all campaigns is 2.164%.  \n- Creative fatigue analysis by age range:  \n  - 0\u201115\u202fyrs: 2.64%  \n  - 16\u201130\u202fyrs: 2.65%  \n  - 31\u201145\u202fyrs: 2.73%  \n  - 46\u201160\u202fyrs: 2.01%  \n  - 61\u201190\u202fyrs: 1.47%  \n\n**Interpretation:**  \n- Younger audiences (0\u201130\u202fyrs) exhibit the highest CTRs, with the peak in the 31\u201145\u202fyr range.  \n- Older age groups (46\u201190\u202fyrs) show progressively lower CTRs, dropping to 1.47% for 61\u201190\u202fyrs.  \n- The trend suggests that creative content resonates more with younger users, while older users click less frequently.  \n- One possible reason is that the creative style, messaging, or offers may align better with the preferences of younger demographics.  \n- Another hypothesis is that older users may be more selective or less engaged with the ad placements used.",
+     "numbers_cited": 23,
+     "supported": 23,
+     "unsupported": [],
+     "groq_usage": {
+      "event": "groq_generation",
+      "model": "openai/gpt-oss-20b",
+      "prompt_tokens": 1175,
+      "completion_tokens": 252,
+      "queue_time_s": 0.236841603,
+      "total_time_s": 0.326344786,
+      "finish_reason": "stop"
+     }
+    },
+    {
+     "question": "Why is CPA higher for some campaign objectives?",
+     "status": "ok",
+     "error": null,
+     "provider_ms": 646.5,
+     "local_analysis_ms": 11.0,
+     "words": 124,
+     "chars": 892,
+     "text": "**What the data shows:**  \n- Brand Awareness campaigns have the highest CPA at **$110.61**.  \n- Engagement CPA: **$84.01**.  \n- App Installs: **$70.34**.  \n- Lead Generation: **$59.76**.  \n- Conversions: **$53.20**.  \n- Overall average CPA across all campaigns: **$66.27**.\n\n**Interpretation:**  \n- Objectives that focus on awareness or engagement tend to drive more impressions and clicks but generate fewer conversions, raising the cost per conversion.  \n- Objectives that directly target conversions or lead generation have higher conversion rates (5.45% and 4.83% respectively) and lower CPA, suggesting more efficient spend.  \n- The higher CPA for Brand Awareness may reflect broader targeting or lower intent audiences, while the lower CPA for Conversions indicates tighter targeting and higher intent.  \n\nThese figures reflect the current filtered view (no additional filters applied).",
+     "numbers_cited": 8,
+     "supported": 8,
+     "unsupported": [],
+     "groq_usage": {
+      "event": "groq_generation",
+      "model": "openai/gpt-oss-20b",
+      "prompt_tokens": 989,
+      "completion_tokens": 213,
+      "queue_time_s": 0.240357424,
+      "total_time_s": 0.294457548,
+      "finish_reason": "stop"
+     }
+    }
+   ],
+   "system_after": {
+    "used_gb": 6.3,
+    "avail_gb": 8.3,
+    "load_pct": 43
+   },
+   "summary": {
+    "success": "10/10",
+    "provider_ms_median": 796.9,
+    "provider_ms_min": 646.5,
+    "provider_ms_max": 1267.4,
+    "words_median": 145.0,
+    "numbers_cited": 192,
+    "numbers_supported": 175,
+    "numbers_unsupported": 17,
+    "rate_limited": 0
+   }
+  }
+ }
+}

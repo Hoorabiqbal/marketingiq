@@ -5,12 +5,23 @@ Every function here operates on the REAL dataset (loaded once at startup)
 and returns real computed numbers. The AI never sees raw rows unless a tool
 explicitly returns them; it never invents a number itself. This is the
 "backend executes against real data" step of the architecture.
+
+This module owns the business logic — metric formulas, what each dashboard
+filter means, ranking and rounding. Row filtering and aggregation are delegated
+to campaign_repository.py (DuckDB by default, Pandas as fallback/reference), so
+no function here depends on a particular database engine.
 """
-import pandas as pd
+import os
+
 import numpy as np
+import pandas as pd
+
+from campaign_repository import PandasCampaignRepository, create_repository
 
 CSV_PATH = None  # set by main.py at startup
-_df = None
+_df = None  # only for the Pandas backend (see load_data)
+_row_count = 0
+_repo = None
 
 # Maps the "dimension" names the AI is allowed to ask for onto real dataset columns.
 # Adding a new askable dimension = one new line here. No per-question code.
@@ -36,30 +47,68 @@ DIMENSION_COLUMNS = {
 # the real formulas (never a hardcoded value).
 BASE_SUM_FIELDS = ["ad_spend", "revenue", "profit", "clicks", "impressions", "conversions"]
 
+# Askable per-campaign numeric fields -> dataset columns (get_numeric_field_stats, filter_campaigns).
+NUMERIC_FIELD_COLUMNS = {"spend": "ad_spend", "revenue": "revenue", "profit": "profit",
+                         "roas": "ROAS", "cpa": "CPA", "ctr": "CTR", "conversion_rate": "conversion_rate",
+                         "clicks": "clicks", "conversions": "conversions"}
+CONDITION_OPERATORS = {">", "<", ">=", "<=", "=="}
 
-def load_data(csv_path: str):
-    global _df, CSV_PATH
-    CSV_PATH = csv_path
+# Creative-age buckets for get_creative_fatigue: right-closed intervals (0,15], (15,30], ...
+CREATIVE_AGE_EDGES = [0, 15, 30, 45, 60, 90]
+CREATIVE_AGE_LABELS = ["0-15", "16-30", "31-45", "46-60", "61-90"]
+
+
+def _read_csv(csv_path: str) -> pd.DataFrame:
     df = pd.read_csv(csv_path)
     df["start_date"] = pd.to_datetime(df["start_date"])
     df["month"] = df["start_date"].dt.strftime("%Y-%m")
-    _df = df
     return df
 
 
+def load_data(csv_path: str, backend: str = None):
+    """Parse the CSV once, then build the analytical backend from that same parsed data
+    (so DuckDB and Pandas see identical values). backend: 'duckdb' (default) or 'pandas';
+    also settable via MARKETINGIQ_DATA_BACKEND.
+
+    DuckDB copies the rows into its own table, so the parsed DataFrame is kept only when the
+    repository is Pandas-backed (it then IS the data). No request path reads it."""
+    global _df, _repo, _row_count, CSV_PATH
+    CSV_PATH = csv_path
+    df = _read_csv(csv_path)
+    _repo = create_repository(df, backend or os.getenv("MARKETINGIQ_DATA_BACKEND", "duckdb"))
+    _row_count = len(df)
+    _df = df if _repo.name == "pandas" else None
+
+
+def row_count() -> int:
+    get_repository()
+    return _row_count
+
+
 def get_dataframe() -> pd.DataFrame:
-    if _df is None:
+    """The dataset as a DataFrame, for tests and offline tools. With the DuckDB backend this
+    parses a fresh copy from the CSV on every call, so never use it on a request path."""
+    get_repository()
+    return _df if _df is not None else _read_csv(CSV_PATH)
+
+
+def get_repository():
+    if _repo is None:
         raise RuntimeError("Data not loaded — call load_data() at startup.")
-    return _df
+    return _repo
+
+
+def data_backend_name() -> str:
+    return _repo.name if _repo is not None else "not_loaded"
 
 
 def list_available_fields() -> dict:
     """Lets the AI check what dimensions/metrics/values actually exist before answering,
     so it can say 'not available' instead of guessing."""
-    df = get_dataframe()
+    profile = get_repository().profile(list(DIMENSION_COLUMNS.values()), "start_date")
     dims = {}
     for name, col in DIMENSION_COLUMNS.items():
-        vals = df[col].dropna().unique().tolist()
+        vals = profile["distinct"][col]
         if len(vals) <= 20:
             dims[name] = sorted([str(v) for v in vals])
         else:
@@ -68,9 +117,13 @@ def list_available_fields() -> dict:
         "dimensions": dims,
         "metrics": ["spend", "revenue", "profit", "conversions", "clicks", "impressions",
                     "roas", "cpa", "cpc", "ctr", "conversion_rate", "quality_score", "bounce_rate"],
-        "date_range": [str(df["start_date"].min().date()), str(df["start_date"].max().date())],
-        "total_campaigns": len(df),
+        "date_range": [_date_str(profile["date_min"]), _date_str(profile["date_max"])],
+        "total_campaigns": profile["row_count"],
     }
+
+
+def _date_str(value) -> str:
+    return str(value.date()) if hasattr(value, "date") else str(value)
 
 
 # Frontend chart-click filters use these field names (see filterState in index.html);
@@ -85,32 +138,48 @@ CHART_FILTER_COLUMNS = {
     "income": "income_bracket",
 }
 
+# Sidebar dropdown filters: (filter key, column, the "no filter" option label).
+SIDEBAR_FILTERS = [
+    ("platform", "platform", "All Platforms"),
+    ("objective", "campaign_objective", "All Objectives"),
+    ("vertical", "industry_vertical", "All Industry Verticals"),
+    ("budget", "budget_tier", "All Budget Tiers"),
+]
 
-def apply_global_filters(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
+
+def _filter_conditions(filters: dict) -> list:
     """Mirrors the dashboard's own campaignMatches() logic exactly, so the AI is always
     reasoning over the SAME subset of data the user is currently looking at on screen —
     including chart-click cross-filters (gender/device/age/creative/emotion/placement/income),
-    not just the five sidebar dropdown filters."""
+    not just the five sidebar dropdown filters. Returns engine-neutral (column, op, value)
+    conditions for the data layer."""
     if not filters:
-        return df
-    if filters.get("platform") and filters["platform"] != "All Platforms":
-        df = df[df["platform"] == filters["platform"]]
-    if filters.get("objective") and filters["objective"] != "All Objectives":
-        df = df[df["campaign_objective"] == filters["objective"]]
-    if filters.get("vertical") and filters["vertical"] != "All Industry Verticals":
-        df = df[df["industry_vertical"] == filters["vertical"]]
-    if filters.get("budget") and filters["budget"] != "All Budget Tiers":
-        df = df[df["budget_tier"] == filters["budget"]]
+        return []
+    conditions = []
+    for key, col, all_label in SIDEBAR_FILTERS:
+        val = filters.get(key)
+        if val and val != all_label:
+            conditions.append((col, "=", _as_text(val)))
     retarget = filters.get("retargeting")
     if retarget == "Retargeting Only":
-        df = df[df["retargeting_flag"] == True]  # noqa: E712
+        conditions.append(("retargeting_flag", "=", True))
     elif retarget == "Cold Audience Only":
-        df = df[df["retargeting_flag"] == False]  # noqa: E712
+        conditions.append(("retargeting_flag", "=", False))
     for field, col in CHART_FILTER_COLUMNS.items():
         val = filters.get(field)
         if val:
-            df = df[df[col] == val]
-    return df
+            conditions.append((col, "=", _as_text(val)))
+    return conditions
+
+
+def _as_text(value) -> str:
+    # Filter columns hold text; a non-text value can never equal one (same as the Pandas behaviour).
+    return value if isinstance(value, str) else str(value)
+
+
+def apply_global_filters(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
+    """Pandas form of the dashboard filters (same meaning as _filter_conditions)."""
+    return PandasCampaignRepository(df)._filtered(_filter_conditions(filters))
 
 
 def _apply_extra_filter(df: pd.DataFrame, dimension: str, value: str) -> pd.DataFrame:
@@ -122,18 +191,19 @@ def _apply_extra_filter(df: pd.DataFrame, dimension: str, value: str) -> pd.Data
     return df[df[col].astype(str) == str(value)]
 
 
-def _metrics_from_rows(df: pd.DataFrame) -> dict:
-    n = len(df)
+def _metrics_from_sums(s: dict) -> dict:
+    """s: campaign_count plus the summed BASE_SUM_FIELDS (as returned by the data layer)."""
+    n = int(s["campaign_count"])
     if n == 0:
         return {"campaign_count": 0, "spend": 0, "revenue": 0, "profit": 0, "conversions": 0,
                 "clicks": 0, "impressions": 0, "roas": None, "cpa": None, "cpc": None,
                 "ctr": None, "conversion_rate": None, "roi_pct": None}
-    spend = float(df["ad_spend"].sum())
-    revenue = float(df["revenue"].sum())
-    profit = float(df["profit"].sum())
-    conversions = int(df["conversions"].sum())
-    clicks = int(df["clicks"].sum())
-    impressions = int(df["impressions"].sum())
+    spend = float(s["ad_spend"])
+    revenue = float(s["revenue"])
+    profit = float(s["profit"])
+    conversions = int(s["conversions"])
+    clicks = int(s["clicks"])
+    impressions = int(s["impressions"])
     return {
         "campaign_count": n,
         "spend": round(spend, 2),
@@ -151,9 +221,12 @@ def _metrics_from_rows(df: pd.DataFrame) -> dict:
     }
 
 
+def _metrics_from_rows(df: pd.DataFrame) -> dict:
+    return _metrics_from_sums({"campaign_count": len(df), **{c: df[c].sum() for c in BASE_SUM_FIELDS}})
+
+
 def get_totals(filters: dict = None) -> dict:
-    df = apply_global_filters(get_dataframe(), filters or {})
-    return _metrics_from_rows(df)
+    return _metrics_from_sums(get_repository().aggregate(_filter_conditions(filters or {}))[0])
 
 
 def rank_dimension(dimension: str, metric: str = "roas", order: str = "desc",
@@ -161,13 +234,14 @@ def rank_dimension(dimension: str, metric: str = "roas", order: str = "desc",
     if dimension not in DIMENSION_COLUMNS:
         return {"error": f"Unknown dimension '{dimension}'. Valid dimensions: {list(DIMENSION_COLUMNS.keys())}"}
     col = DIMENSION_COLUMNS[dimension]
-    df = apply_global_filters(get_dataframe(), filters or {})
     rows = []
-    for name, g in df.groupby(col):
-        m = _metrics_from_rows(g)
-        m["name"] = str(name)
+    for g in get_repository().aggregate(_filter_conditions(filters or {}), group_by=col):
+        m = _metrics_from_sums(g)
+        m["name"] = str(g["group"])
         rows.append(m)
-    valid_metric = metric if metric in rows[0] else "roas" if rows else metric
+    if not rows:  # no campaigns match the filters
+        return {"dimension": dimension, "metric": metric, "results": []}
+    valid_metric = metric if metric in rows[0] else "roas"
     rows = [r for r in rows if r.get(valid_metric) is not None]
     rows.sort(key=lambda r: r[valid_metric], reverse=(order == "desc"))
     return {"dimension": dimension, "metric": valid_metric, "results": rows[:limit]}
@@ -177,15 +251,14 @@ def compare_entities(dimension: str, names: list, filters: dict = None) -> dict:
     if dimension not in DIMENSION_COLUMNS:
         return {"error": f"Unknown dimension '{dimension}'. Valid dimensions: {list(DIMENSION_COLUMNS.keys())}"}
     col = DIMENSION_COLUMNS[dimension]
-    df = apply_global_filters(get_dataframe(), filters or {})
-    available = set(df[col].astype(str).unique())
+    groups = {str(g["group"]): g for g in get_repository().aggregate(_filter_conditions(filters or {}), group_by=col)}
+    available = set(groups)
     results, not_found = [], []
     for name in names:
         if str(name) not in available:
             not_found.append(name)
             continue
-        sub = df[df[col].astype(str) == str(name)]
-        m = _metrics_from_rows(sub)
+        m = _metrics_from_sums(groups[str(name)])
         m["name"] = name
         results.append(m)
     out = {"dimension": dimension, "results": results}
@@ -218,70 +291,73 @@ def percentage_share(dimension: str, name: str, metric: str = "spend", filters: 
 def get_numeric_field_stats(fields: list, filters: dict = None) -> dict:
     """Lets the AI discover real percentiles/min/max/median before deciding what counts
     as 'high' or 'low' — so thresholds come from the data, not a guess."""
-    df = apply_global_filters(get_dataframe(), filters or {})
-    field_map = {"spend": "ad_spend", "revenue": "revenue", "profit": "profit",
-                 "roas": "ROAS", "cpa": "CPA", "ctr": "CTR", "conversion_rate": "conversion_rate",
-                 "clicks": "clicks", "conversions": "conversions"}
+    repo = get_repository()
+    columns = list(dict.fromkeys(NUMERIC_FIELD_COLUMNS[f] for f in fields
+                                 if f in NUMERIC_FIELD_COLUMNS and repo.has_column(NUMERIC_FIELD_COLUMNS[f])))
+    stats = repo.numeric_stats(columns, _filter_conditions(filters or {})) if columns else {}
     out = {}
     for f in fields:
-        col = field_map.get(f)
-        if col is None or col not in df.columns:
+        col = NUMERIC_FIELD_COLUMNS.get(f)
+        if col is None or col not in stats:
             out[f] = {"error": "field not available"}
             continue
-        s = df[col].dropna()
-        out[f] = {
-            "min": round(float(s.min()), 2), "max": round(float(s.max()), 2),
-            "mean": round(float(s.mean()), 2), "median": round(float(s.median()), 2),
-            "p25": round(float(s.quantile(0.25)), 2), "p75": round(float(s.quantile(0.75)), 2),
-        }
+        s = stats[col]
+        if s is None:  # no campaigns match the filters
+            out[f] = {k: None for k in ("min", "max", "mean", "median", "p25", "p75")}
+            continue
+        out[f] = {k: round(float(s[k]), 2) for k in ("min", "max", "mean", "median", "p25", "p75")}
     return out
 
 
 def filter_campaigns(conditions: list, sort_by: str = "profit", order: str = "asc",
-                      limit: int = 10, filters: dict = None) -> dict:
+                      limit: int = 10, filters: dict = None, include_aggregates: bool = False) -> dict:
     """conditions: list of {field, operator, value} e.g. [{"field":"spend","operator":">","value":40000},
     {"field":"revenue","operator":"<","value":20000}]. Lets the AI find campaigns matching
     real numeric criteria (e.g. 'high spend, low revenue') using thresholds it derived from
     get_numeric_field_stats, rather than us hardcoding what 'high' or 'low' means."""
-    df = apply_global_filters(get_dataframe(), filters or {})
-    field_map = {"spend": "ad_spend", "revenue": "revenue", "profit": "profit",
-                 "roas": "ROAS", "cpa": "CPA", "ctr": "CTR", "conversion_rate": "conversion_rate",
-                 "clicks": "clicks", "conversions": "conversions"}
-    ops = {">": lambda s, v: s > v, "<": lambda s, v: s < v,
-           ">=": lambda s, v: s >= v, "<=": lambda s, v: s <= v, "==": lambda s, v: s == v}
+    repo = get_repository()
+    where = _filter_conditions(filters or {})
     for cond in conditions or []:
-        col = field_map.get(cond.get("field"))
-        op = ops.get(cond.get("operator"))
-        if col is None or op is None or col not in df.columns:
+        col = NUMERIC_FIELD_COLUMNS.get(cond.get("field"))
+        op = cond.get("operator")
+        if col is None or op not in CONDITION_OPERATORS or not repo.has_column(col):
             continue
-        df = df[op(df[col], cond["value"])]
-    sort_col = field_map.get(sort_by, "profit")
-    df = df.sort_values(sort_col, ascending=(order == "asc"))
+        where.append((col, op, cond["value"]))
+    sort_col = NUMERIC_FIELD_COLUMNS.get(sort_by, "profit")
     cols = ["campaign_id", "platform", "campaign_objective", "ad_spend", "revenue",
             "profit", "ROAS", "CPA", "conversion_rate"]
-    out = df[cols].head(limit).rename(columns={
-        "campaign_id": "id", "campaign_objective": "objective", "ad_spend": "spend",
-        "ROAS": "roas", "CPA": "cpa", "conversion_rate": "conversion_rate",
-    })
-    return {"matched_count": len(df), "campaigns": out.round(2).to_dict(orient="records")}
+    matched, rows = repo.find_campaigns(where, sort_col, ascending=(order == "asc"), limit=limit, columns=cols)
+    rename = {"campaign_id": "id", "campaign_objective": "objective", "ad_spend": "spend",
+              "ROAS": "roas", "CPA": "cpa", "conversion_rate": "conversion_rate"}
+    campaigns = [{rename.get(k, k): _round2(v) for k, v in r.items()} for r in rows]
+    out = {"matched_count": int(matched), "campaigns": campaigns}
+    if include_aggregates:
+        # Totals for the whole matching group (same formulas as get_totals), so an explanation
+        # never has to present the few example rows above as if they described the group.
+        out["aggregates"] = _metrics_from_sums(repo.aggregate(where)[0])
+    return out
+
+
+def _round2(value):
+    # Same rounding as DataFrame.round(2) (numpy half-to-even on the float).
+    return float(np.round(value, 2)) if isinstance(value, (float, np.floating)) else value
 
 
 def trend_over_time(metric: str = "revenue", filters: dict = None) -> dict:
-    df = apply_global_filters(get_dataframe(), filters or {})
     field_map = {"revenue": "revenue", "spend": "ad_spend", "profit": "profit", "conversions": "conversions"}
     col = field_map.get(metric, "revenue")
-    g = df.groupby("month")[col].sum().reset_index()
-    return {"metric": metric, "series": [{"month": r["month"], "value": round(float(r[col]), 2)} for _, r in g.iterrows()]}
+    series = get_repository().monthly_sum(col, _filter_conditions(filters or {}))
+    return {"metric": metric, "series": [{"month": m, "value": round(float(v), 2)} for m, v in series]}
 
 
 def get_creative_fatigue(filters: dict = None) -> dict:
-    df = apply_global_filters(get_dataframe(), filters or {})
-    df = df.copy()
-    df["age_bucket"] = pd.cut(df["creative_age_days"], bins=[0, 15, 30, 45, 60, 90],
-                               labels=["0-15", "16-30", "31-45", "46-60", "61-90"])
-    g = df.groupby("age_bucket", observed=True).agg(clicks=("clicks", "sum"), impressions=("impressions", "sum"))
-    g["ctr"] = (g["clicks"] / g["impressions"] * 100).round(2)
-    return {"buckets": [{"age_range": str(idx), "ctr": float(row["ctr"])} for idx, row in g.iterrows()]}
+    buckets = get_repository().bucket_totals(_filter_conditions(filters or {}), "creative_age_days",
+                                             CREATIVE_AGE_EDGES, ["clicks", "impressions"])
+    return {"buckets": [
+        {"age_range": CREATIVE_AGE_LABELS[i],
+         "ctr": float(np.round(s["clicks"] / s["impressions"] * 100, 2)) if s["impressions"] else None}
+        for i, s in buckets
+    ]}
 
 
 TOOL_REGISTRY = {

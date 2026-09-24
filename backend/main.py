@@ -22,38 +22,67 @@ Architecture (unchanged from the Claude version):
 Run locally:
     uvicorn main:app --reload --port 8000
 """
+import json
 import os
 import time
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 from google.genai import types
 
+import chat_routing
 import data_tools as dt
+import llm_providers
+import query_router as qr
+from gemini_provider import call_gemini
 from gemini_rotator import GeminiKeyRotator, load_keys
+from llm_adapter import BUSY_MESSAGE, LLMAdapter, ProviderSlots
 
 APP_DIR = Path(__file__).parent
 load_dotenv(APP_DIR / ".env")
 
 CSV_PATH = os.getenv("MARKETINGIQ_CSV_PATH", str(APP_DIR / ".." / "data" / "tech_advertising_campaigns_dataset.csv"))
 dt.load_data(CSV_PATH)
+qr.warm_up()  # router entity index, built once before the first request
 
 app = FastAPI(title="MarketingIQ AI Analyst")
 
-# Local dev: allow the static frontend (opened via file:// or a local server) to call this API.
-# Tighten this to your real deployed frontend origin before shipping publicly.
+# Browsers may call this API only from the deployed frontend (CORS_ALLOW_ORIGINS, comma-separated;
+# "*" allows any origin) or from a page served on this machine (localhost / 127.0.0.1, any port),
+# which is how the dashboard is run locally. No cookies or credentials are involved.
+DEFAULT_CORS_ORIGINS = "https://marketingiqp.netlify.app"
+CORS_ALLOW_ORIGINS = [o.strip().rstrip("/") for o in os.getenv("CORS_ALLOW_ORIGINS", DEFAULT_CORS_ORIGINS).split(",")
+                      if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=CORS_ALLOW_ORIGINS,
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
 )
 
 rotator = GeminiKeyRotator(load_keys())
 MODEL = "gemini-3.6-flash"  # free-tier model; update here if Google renames/replaces it again
+
+# Explanation layer for LLM_REQUIRED questions (/api/query and /api/chat). LLM_PROVIDER picks
+# exactly one provider (default gemini; see llm_providers.py) — no automatic failover. The Gemini
+# provider shares the rotator above with the chat fallback, which is always Gemini tool-use.
+LLM_PROVIDER = llm_providers.selected_provider()
+# At most this many requests wait on an LLM at once (explanations and the chat fallback share it),
+# so slow provider calls can never occupy all of the server's worker threads (40 by default).
+LLM_MAX_CONCURRENT = int(os.getenv("LLM_MAX_CONCURRENT", "20"))
+provider_slots = ProviderSlots(LLM_MAX_CONCURRENT)
+llm_adapter = LLMAdapter(llm_providers.build_provider(LLM_PROVIDER, rotator, MODEL),
+                         timeout_s=llm_providers.timeout_seconds(LLM_PROVIDER), slots=provider_slots)
+
+# /api/chat answers through the Query Router first; the Gemini tool-use loop is the fallback.
+# CHAT_ROUTER_ENABLED=0 sends every chat request straight to the tool-use loop (rollback switch).
+CHAT_ROUTER_ENABLED = os.getenv("CHAT_ROUTER_ENABLED", "1").strip().lower() not in ("0", "false", "no", "off")
+# Whole-request deadline for the tool-use loop (all of its Gemini turns and retries together).
+CHAT_FALLBACK_TIMEOUT_S = float(os.getenv("CHAT_FALLBACK_TIMEOUT_SECONDS", "45"))
 
 SYSTEM_PROMPT = """You are the MarketingIQ AI Analyst, a data-grounded marketing analytics assistant.
 
@@ -254,46 +283,80 @@ def _message_for_error(err: str) -> str:
         return f"Gemini's servers are temporarily overloaded after a few retries — please try again in a moment. ({err[len('server:'):]})"
     if err.startswith("client:"):
         return f"The AI Analyst hit a request error: {err[len('client:'):]}"
+    if err.startswith("timeout:"):
+        return "The AI Analyst took too long to respond, so the request was stopped — please try again."
     return f"The AI Analyst hit an unexpected error: {err}"
+
+
+# Explanation failures on the routed path reuse the same user-facing messages as the fallback.
+_LLM_ERROR_TAGS = {"not_configured": "no_key", "auth_error": "auth:", "rate_limited": "quota_exhausted:",
+                   "timeout": "timeout:"}
+
+
+def _llm_error_answer(llm: dict) -> str:
+    tag = _LLM_ERROR_TAGS.get(llm.get("error")) if llm.get("provider") == "gemini" else None
+    return _message_for_error(tag) if tag else llm.get("message") or _message_for_error("unexpected")
 
 
 @app.post("/api/chat")
 def chat(req: ChatRequest):
-    if not rotator.configured:
-        return {"answer": _message_for_error("no_key")}
-
+    started = time.perf_counter()
     filters = req.filters or {}
+    if CHAT_ROUTER_ENABLED:
+        last = req.messages[-1] if req.messages else None
+        question = last.content if last is not None and last.role == "user" else ""
+        decision = chat_routing.decide(question, len(req.messages) > 1, filters, llm_adapter, _llm_error_answer)
+        if decision.answer is not None:
+            _log_chat(decision.route, decision.reason, started)
+            return {"answer": decision.answer, "route": decision.route}
+        reason = decision.reason
+    else:
+        reason = "router_disabled"
+    with provider_slots.acquire() as got_slot:
+        text = _gemini_tool_loop(req.messages, filters) if got_slot else BUSY_MESSAGE
+    # The dashboard renders answers as HTML: escape Gemini's text like every routed answer.
+    answer = chat_routing.explanation_html(text)
+    _log_chat("FALLBACK", reason, started)
+    return {"answer": answer, "route": "FALLBACK"}
+
+
+def _log_chat(route: str, reason: str, started: float):
+    qr.logger.info(json.dumps({"event": "chat_answered", "route": route, "reason": reason,
+                               "elapsed_ms": round((time.perf_counter() - started) * 1000, 2)}))
+
+
+def _gemini_tool_loop(messages: list, filters: dict) -> str:
+    """The original AI Analyst: Gemini picks data tools itself. Used for questions the Query
+    Router can't plan (follow-ups, judgement calls, anything unresolved). Every Gemini call goes
+    through call_gemini (per-request timeout + bounded 5xx retry), and the whole loop shares one
+    deadline, so it always terminates."""
+    if not rotator.configured:
+        return _message_for_error("no_key")
+
     contents = [
         types.Content(role=("model" if m.role == "assistant" else "user"), parts=[types.Part.from_text(text=m.content)])
-        for m in req.messages
+        for m in messages
     ]
-
-    config = types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT, tools=[GEMINI_TOOL])
+    config = {"system_instruction": SYSTEM_PROMPT, "tools": [GEMINI_TOOL]}
+    deadline = time.monotonic() + CHAT_FALLBACK_TIMEOUT_S
 
     # Agentic loop: keep calling Gemini, executing any tool calls it makes,
     # until it returns a final plain-text answer (or we hit a safety cap).
     for _ in range(6):
-        response = None
-        err = None
-        # Server-error retries (transient infra overload) stay on whichever key the
-        # rotator is currently using — that's a Gemini-wide issue, not a per-key one.
-        for attempt in range(3):
-            response, err = rotator.call(MODEL, contents, config)
-            if response is not None or not (err and err.startswith("server:")):
-                break
-            if attempt < 2:
-                time.sleep(1.5 * (attempt + 1))  # brief backoff: 1.5s, then 3s
-
+        response, err = call_gemini(rotator, MODEL, contents, config, deadline)
         if response is None:
-            return {"answer": _message_for_error(err)}
+            return _message_for_error(err)
 
-        candidate = response.candidates[0]
-        parts = candidate.content.parts or []
+        try:
+            candidate = response.candidates[0]
+            parts = candidate.content.parts or []
+        except (AttributeError, IndexError, TypeError):
+            return "The AI Analyst didn't return a response for that question — try rephrasing it."
         function_calls = [p.function_call for p in parts if p.function_call is not None]
 
         if not function_calls:
             final_text = "".join(p.text for p in parts if p.text)
-            return {"answer": final_text or "The AI Analyst didn't return a response for that question — try rephrasing it."}
+            return final_text or "The AI Analyst didn't return a response for that question — try rephrasing it."
 
         contents.append(candidate.content)
         response_parts = []
@@ -302,14 +365,35 @@ def chat(req: ChatRequest):
             response_parts.append(types.Part.from_function_response(name=fc.name, response={"result": result}))
         contents.append(types.Content(role="user", parts=response_parts))
 
-    return {"answer": "I wasn't able to reach a final answer for that question — try rephrasing it or breaking it into a simpler question."}
+    return "I wasn't able to reach a final answer for that question — try rephrasing it or breaking it into a simpler question."
+
+
+class QueryRequest(BaseModel):
+    query: str = Field(max_length=qr.MAX_QUERY_LENGTH)
+    filters: dict[str, str | bool | None] = {}
+
+
+@app.post("/api/query")
+def query(req: QueryRequest):
+    """Query Router (query_router.py): DIRECT_DATABASE questions are answered by an existing
+    data tool with no LLM call; LLM_REQUIRED questions get a compact analysis explained via
+    the LLM Adapter. Runs alongside /api/chat, which is unchanged."""
+    try:
+        return qr.route_query(req.query, req.filters, explainer=llm_adapter)
+    except qr.QueryRouterError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.public_message)
 
 
 @app.get("/api/health")
 def health():
     return {
         "status": "ok",
-        "campaigns_loaded": len(dt.get_dataframe()),
+        "campaigns_loaded": dt.row_count(),
+        "data_backend": dt.data_backend_name(),
+        "llm_provider": llm_adapter.provider.name,
+        "llm_model": llm_adapter.provider.model,
+        # Whether the active provider has a key (never the key itself).
+        "llm_configured": rotator.configured if LLM_PROVIDER == "gemini" else llm_adapter.provider.configured,
         "gemini_key_configured": rotator.configured,
         "gemini_keys_configured": len(rotator.clients),
     }

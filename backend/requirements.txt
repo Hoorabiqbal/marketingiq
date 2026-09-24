@@ -4,3 +4,5 @@ pandas>=2.2
 google-genai>=0.3
 python-dotenv>=1.0
 pydantic>=2.9
+duckdb>=1.1
+httpx>=0.27

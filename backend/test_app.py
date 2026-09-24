@@ -9,6 +9,9 @@ whether a real GEMINI_API_KEY is configured.
 """
 import os
 os.environ["GEMINI_API_KEY"] = "test-placeholder-not-real"
+# These tests exercise the Gemini tool-use loop, which /api/chat now uses as its fallback;
+# the routed path (Query Router first) is covered by test_chat_migration.py.
+os.environ["CHAT_ROUTER_ENABLED"] = "0"
 
 from unittest.mock import patch
 from fastapi.testclient import TestClient
@@ -36,6 +39,7 @@ print("=== TEST 1: health check ===")
 r = client_app.get("/api/health")
 print(r.status_code, r.json())
 assert r.status_code == 200 and r.json()["campaigns_loaded"] == 10000 and r.json()["gemini_key_configured"] is True
+assert r.json()["llm_provider"] == "gemini" and r.json()["llm_configured"] is True
 
 print("\n=== TEST 2: single tool call -> final answer (no filters) ===")
 with patch.object(main.rotator.clients[0].models, "generate_content") as mock_gen:
@@ -97,7 +101,7 @@ with patch.object(main.rotator.clients[0].models, "generate_content") as mock_ge
     mock_gen.side_effect = [make_function_call_response([("get_totals", {})]) for _ in range(10)]
     r = client_app.post("/api/chat", json={"messages": [{"role": "user", "content": "loop forever"}], "filters": {}})
     print(r.status_code, r.json())
-    assert "wasn't able to reach" in r.json()["answer"]
+    assert "wasn&#x27;t able to reach" in r.json()["answer"]  # HTML-escaped for the dashboard
     assert mock_gen.call_count == 6  # capped, didn't loop forever
 
 print("\n=== TEST 7: multiple simultaneous tool calls in one turn ===")
