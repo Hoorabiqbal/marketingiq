@@ -142,8 +142,8 @@ There is no separate conversation memory.
 | Turning an error into a user message | `LLMAdapter` (explanations), or `_message_for_error` (fallback) |
 
 The SDK's own retries are off. The endpoint, adapter and router add none. With
-`LLM_PROVIDER=qwen`, each explanation is one Ollama request within the deadline, with no
-retries: retrying a slow local model would only load the machine further. Deadlines are
+`LLM_PROVIDER=groq`, each explanation gets at most one retry on a 5xx or network error,
+within the deadline, and a 429 is never retried. Deadlines are
 `LLM_TIMEOUT_SECONDS` (default 25) for an explanation and
 `CHAT_FALLBACK_TIMEOUT_SECONDS` (default 45) for the whole fallback loop.
 
@@ -209,38 +209,32 @@ Errors return a safe message with no stack trace: `400` for an empty or invalid 
 tool fails. Each request writes one structured log line (query, route, tools,
 elapsed_ms, status).
 
-### LLM providers (Gemini, hosted Groq, or local Qwen)
+### LLM providers (Gemini by default, Groq optional)
 
 Explanations for `LLM_REQUIRED` questions come from **one** provider, chosen at startup:
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `LLM_PROVIDER` | `gemini` | `gemini` (Google API), `groq` (Groq API) or `qwen` (local model through Ollama). Any other value stops startup |
+| `LLM_PROVIDER` | `gemini` | `gemini` (Google API) or `groq` (Groq API). Any other value stops startup |
 | `GROQ_API_KEY` | none | Groq API key (console.groq.com). Put it in `.env`, never in code. Without it, `groq` still starts but explanations report `not_configured` |
 | `GROQ_MODEL` | `openai/gpt-oss-20b` | Groq model ID. Which models are available depends on the Groq account (check `GET /openai/v1/models`). Reasoning models (`openai/gpt-oss-*`) run with `reasoning_effort=low`, reasoning hidden |
-| `OLLAMA_HOST` | `http://127.0.0.1:11434` | Where Ollama listens. `host:port` or a full URL |
-| `OLLAMA_MODEL` | `qwen2.5:1.5b-instruct` | The Ollama model tag |
-| `LLM_TIMEOUT_SECONDS` | 25 (gemini, groq) / 90 (qwen) | Deadline per explanation. Local CPU inference, including a cold model load, needs longer |
+| `LLM_TIMEOUT_SECONDS` | 25 | Deadline per explanation |
 
-To use Qwen: install [Ollama](https://ollama.com), run `ollama pull qwen2.5:1.5b-instruct`
-once, keep Ollama running, and start the backend with `LLM_PROVIDER=qwen`.
-`/api/health` shows the active `llm_provider` and `llm_model`.
+`/api/health` shows the active `llm_provider` and `llm_model` (never a key).
 
-- Every provider gets the **same input**: the question plus the same compact analysis
-  (`build_user_prompt`). Gemini and Groq share the exact same system prompt
-  (`GROUNDING_INSTRUCTIONS`). Qwen gets a shorter one with the same grounding rules.
+- Both providers get the **same input**: the question plus the same compact analysis
+  (`build_user_prompt`) and the same system prompt (`GROUNDING_INSTRUCTIONS`).
 - Groq: one request per explanation within the deadline, plus one retry on a 5xx or network
   error. A 429 rate limit is reported, never retried. The key is only sent in the
-  Authorization header and is never logged.
+  Authorization header and is never logged. Free-tier token limits per minute can be low
+  (8K tokens/min was seen for `openai/gpt-oss-120b`, about 5 explanations a minute).
 - There is **no automatic failover.** If the selected provider fails, the answer says so.
   `DIRECT_DATABASE` questions never use any provider. The `/api/chat` fallback for
   unresolved questions is always the Gemini tool-use loop, whichever provider is selected.
-- **Local inference limits:** Qwen runs on the CPU here (no supported GPU). The first
-  request after the model unloads (Ollama's default is 5 minutes idle) pays the model load
-  time. Requests compete for the same CPU, so throughput under several simultaneous users
-  still needs its own load test.
 - `benchmark_llm_providers.py` runs the same 10 questions through each provider and reports
-  latency, grounding checks and resource use.
+  latency and grounding checks. Past results, including a local Qwen model through Ollama
+  that was evaluated and then removed (too slow on CPU, not grounded enough), are in
+  `benchmark_results/`.
 
 ### LLM Adapter
 
@@ -251,7 +245,8 @@ isn't plain JSON (such as a DataFrame), anything over 16 KB, and empty results. 
 turns every provider failure into a structured `llm` result, so the analysis is still
 returned when the LLM is down.
 
-Gemini is the only provider so far (`gemini_provider.py`). It reuses the app's existing
+There are two providers: `gemini_provider.py` (default) and `groq_provider.py` (optional).
+The Gemini provider reuses the app's existing
 `GeminiKeyRotator`, so it has the same keys and quota rotation as `/api/chat`. It makes one
 call per question, with shared grounding instructions: use only the supplied numbers, keep
 facts and interpretation separate, and stay short. Each call has a hard timeout
@@ -267,7 +262,6 @@ python test_query_router.py
 python test_llm_adapter.py
 python test_data_layer.py
 python test_chat_migration.py
-python test_qwen_provider.py
 python test_groq_provider.py
 ```
 

@@ -2,7 +2,6 @@
 Explicit LLM provider selection for the LLM Adapter.
 
     LLM_PROVIDER=gemini   (default — the existing behaviour)
-    LLM_PROVIDER=qwen     local Qwen through Ollama (OLLAMA_HOST, OLLAMA_MODEL)
     LLM_PROVIDER=groq     hosted Groq API (GROQ_API_KEY, GROQ_MODEL)
 
 There is deliberately no automatic failover between providers: exactly one provider
@@ -11,11 +10,10 @@ instead of silently choosing something else.
 """
 import os
 
-PROVIDERS = ("gemini", "qwen", "groq")
+PROVIDERS = ("gemini", "groq")
 DEFAULT_PROVIDER = "gemini"
-# Explanation deadline when LLM_TIMEOUT_SECONDS is not set. Local CPU inference (including a
-# cold model load) needs longer than a hosted API.
-DEFAULT_TIMEOUT_S = {"gemini": 25.0, "qwen": 90.0, "groq": 25.0}
+# Explanation deadline when LLM_TIMEOUT_SECONDS is not set.
+DEFAULT_TIMEOUT_S = {"gemini": 25.0, "groq": 25.0}
 
 
 class ProviderConfigError(ValueError):
@@ -37,10 +35,6 @@ def build_provider(name: str, gemini_rotator=None, gemini_model: str = None, env
     if name == "gemini":
         from gemini_provider import GeminiProvider
         return GeminiProvider(gemini_rotator, gemini_model)
-    if name == "qwen":
-        from qwen_provider import DEFAULT_OLLAMA_HOST, DEFAULT_OLLAMA_MODEL, QwenProvider
-        return QwenProvider(host=env.get("OLLAMA_HOST") or DEFAULT_OLLAMA_HOST,
-                            model=env.get("OLLAMA_MODEL") or DEFAULT_OLLAMA_MODEL)
     if name == "groq":
         from groq_provider import DEFAULT_GROQ_MODEL, GroqProvider
         # A missing key doesn't stop startup: explanations report not_configured, like Gemini.

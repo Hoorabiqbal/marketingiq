@@ -379,6 +379,8 @@ def health():
         "data_backend": dt.data_backend_name(),
         "llm_provider": llm_adapter.provider.name,
         "llm_model": llm_adapter.provider.model,
+        # Whether the active provider has a key (never the key itself).
+        "llm_configured": rotator.configured if LLM_PROVIDER == "gemini" else llm_adapter.provider.configured,
         "gemini_key_configured": rotator.configured,
         "gemini_keys_configured": len(rotator.clients),
     }

@@ -39,6 +39,7 @@ print("=== TEST 1: health check ===")
 r = client_app.get("/api/health")
 print(r.status_code, r.json())
 assert r.status_code == 200 and r.json()["campaigns_loaded"] == 10000 and r.json()["gemini_key_configured"] is True
+assert r.json()["llm_provider"] == "gemini" and r.json()["llm_configured"] is True
 
 print("\n=== TEST 2: single tool call -> final answer (no filters) ===")
 with patch.object(main.rotator.clients[0].models, "generate_content") as mock_gen:

@@ -1,8 +1,7 @@
 """
 Benchmark LLM providers on the LLM_REQUIRED path with identical inputs.
 
-    python benchmark_llm_providers.py --providers qwen,gemini --out results.json
-    python benchmark_llm_providers.py --providers gemini,groq --out results.json   (needs GROQ_API_KEY)
+    python benchmark_llm_providers.py --providers gemini,groq --out results.json   (groq needs GROQ_API_KEY)
 
 For each question: the Query Router classifies it (must be LLM_REQUIRED) and builds the
 compact analysis from the DuckDB data layer ONCE; that exact block goes to every provider
@@ -14,10 +13,10 @@ Recorded per answer: latency (local analysis vs provider), success, length, and 
 grounding check: every number in the answer is matched against the numbers present in the
 supplied analysis (at the precision written, incl. "$34.3 million"-style scaling). Numbers
 with no match are listed as `unsupported` for manual review — they may be invented, or
-derived (e.g. a difference the model computed).
+derived (e.g. a difference the model computed). System RAM is recorded before and after
+each provider's run.
 
-While Qwen runs, a sampler records system RAM, Ollama process RAM, total CPU %, and a
-responsiveness probe (how late a 50 ms timer fires — a proxy for UI stalls).
+Past results (including the removed local Qwen provider) are in benchmark_results/.
 """
 import argparse
 import hashlib
@@ -27,9 +26,7 @@ import logging
 import os
 import re
 import statistics
-import subprocess
 import sys
-import threading
 import time
 from ctypes import wintypes
 from pathlib import Path
@@ -96,7 +93,7 @@ def check_numbers(text: str, supplied: list) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# System sampling (Windows; degrades to None elsewhere)
+# System memory (Windows; degrades to None elsewhere)
 # ---------------------------------------------------------------------------
 
 class MEMORYSTATUSEX(ctypes.Structure):
@@ -118,80 +115,11 @@ def system_mem():
         return None
 
 
-def _filetime(ft):
-    return (ft.dwHighDateTime << 32) | ft.dwLowDateTime
-
-
-def cpu_times():
-    try:
-        idle, kernel, user = wintypes.FILETIME(), wintypes.FILETIME(), wintypes.FILETIME()
-        ctypes.windll.kernel32.GetSystemTimes(ctypes.byref(idle), ctypes.byref(kernel), ctypes.byref(user))
-        return _filetime(idle), _filetime(kernel) + _filetime(user)
-    except Exception:
-        return None
-
-
-def ollama_rss_mb():
-    try:
-        out = subprocess.run(["tasklist", "/FO", "CSV", "/NH"], capture_output=True, text=True, timeout=5).stdout
-        total = 0
-        for line in out.splitlines():
-            cols = [c.strip('"') for c in line.split('","')]
-            if len(cols) >= 5 and cols[0].lower().startswith(("ollama", "llama")):
-                total += int(re.sub(r"[^\d]", "", cols[4]) or 0)  # "123,456 K"
-        return round(total / 1024, 1)
-    except Exception:
-        return None
-
-
-class Sampler(threading.Thread):
-    def __init__(self, interval=1.0):
-        super().__init__(daemon=True)
-        self.interval, self.samples, self.lateness_ms, self._stop = interval, [], [], threading.Event()
-        self._probe = threading.Thread(target=self._probe_loop, daemon=True)
-
-    def _probe_loop(self):
-        while not self._stop.is_set():
-            t = time.perf_counter()
-            time.sleep(0.05)
-            self.lateness_ms.append((time.perf_counter() - t) * 1000 - 50)
-
-    def run(self):
-        self._probe.start()
-        prev = cpu_times()
-        while not self._stop.wait(self.interval):
-            cur = cpu_times()
-            cpu = None
-            if prev and cur and cur[1] - prev[1] > 0:
-                cpu = round(100 * (1 - (cur[0] - prev[0]) / (cur[1] - prev[1])), 1)
-            prev = cur
-            self.samples.append({"t": time.time(), "cpu_pct": cpu, "mem": system_mem(), "ollama_mb": ollama_rss_mb()})
-
-    def stop(self):
-        self._stop.set()
-        self.join(timeout=5)
-
-    def summary(self):
-        cpus = [s["cpu_pct"] for s in self.samples if s["cpu_pct"] is not None]
-        used = [s["mem"]["used_gb"] for s in self.samples if s["mem"]]
-        oll = [s["ollama_mb"] for s in self.samples if s["ollama_mb"] is not None]
-        late = sorted(self.lateness_ms)
-        return {"samples": len(self.samples),
-                "cpu_pct_avg": round(statistics.mean(cpus), 1) if cpus else None,
-                "cpu_pct_max": max(cpus) if cpus else None,
-                "cpu_samples_over_90pct": sum(c > 90 for c in cpus),
-                "system_used_gb_max": max(used) if used else None,
-                "ollama_rss_mb_max": max(oll) if oll else None,
-                "timer_lateness_ms_p50": round(late[len(late) // 2], 1) if late else None,
-                "timer_lateness_ms_p99": round(late[int(len(late) * 0.99) - 1], 1) if late else None,
-                "timer_lateness_ms_max": round(late[-1], 1) if late else None}
-
-
 # ---------------------------------------------------------------------------
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--providers", default="qwen,gemini")
+    ap.add_argument("--providers", default="gemini,groq")
     ap.add_argument("--out", default="llm_benchmark_results.json")
     ap.add_argument("--gemini-pause", type=float, default=3.0, help="seconds between Gemini calls (free-tier RPM)")
     ap.add_argument("--groq-pause", type=float, default=3.0, help="seconds between Groq calls (free-tier RPM/TPM)")
@@ -210,7 +138,7 @@ def main():
 
     def capture(record):
         msg = record.getMessage()
-        if any(e in msg for e in ('"qwen_generation"', '"groq_generation"', '"groq_rate_limited"')):
+        if any(e in msg for e in ('"groq_generation"', '"groq_rate_limited"')):
             provider_logs.append(json.loads(msg))
     handler.emit = capture
     adapter_logger.addHandler(handler)
@@ -239,11 +167,6 @@ def main():
         provider = llm_providers.build_provider(name, rotator, "gemini-3.6-flash")
         adapter = LLMAdapter(provider, timeout_s=llm_providers.timeout_seconds(name))
         run = {"model": provider.model, "system_before": system_mem(), "answers": []}
-        sampler = None
-        if name == "qwen":
-            run["ollama_rss_mb_before"] = ollama_rss_mb()
-            sampler = Sampler()
-            sampler.start()
         for i, c in enumerate(cases):
             if name in ("gemini", "groq") and i:
                 time.sleep(args.gemini_pause if name == "gemini" else args.groq_pause)
@@ -257,16 +180,12 @@ def main():
                      "words": len(text.split()), "chars": len(text), "text": text,
                      **check_numbers(text, c["supplied_numbers"])}
             for log in provider_logs:
-                key = {"qwen_generation": "ollama", "groq_generation": "groq_usage"}.get(log["event"], "rate_limit")
+                key = "groq_usage" if log["event"] == "groq_generation" else "rate_limit"
                 entry[key] = log
             run["answers"].append(entry)
             print(f"[{name}] {i + 1}/{len(cases)} {out['status']:5} {provider_ms:8.0f} ms  "
                   f"words={entry['words']:3}  numbers={entry['numbers_cited']:2} unsupported={entry['unsupported']}",
                   flush=True)
-        if sampler:
-            sampler.stop()
-            run["during"] = sampler.summary()
-            run["ollama_rss_mb_after"] = ollama_rss_mb()
         run["system_after"] = system_mem()
         ok = [a["provider_ms"] for a in run["answers"] if a["status"] == "ok"]
         run["summary"] = {"success": f"{len(ok)}/{len(cases)}",

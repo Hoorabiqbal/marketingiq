@@ -1,7 +1,7 @@
 """
 Tests for the Groq provider (groq_provider.py) and its selection through llm_providers.py.
 The Groq API is replaced by httpx.MockTransport, so these tests never need a GROQ_API_KEY and
-use no quota; Gemini and Ollama are patched/guarded to fail loudly if anything calls them.
+use no quota; Gemini is patched/guarded to fail loudly if anything calls it.
 
 Run:  python test_groq_provider.py      (or: pytest test_groq_provider.py)
 """
@@ -206,7 +206,20 @@ def test_malformed_response():
 def test_provider_selection_and_configuration():
     assert llm_providers.selected_provider({}) == "gemini"  # Gemini stays the default
     assert llm_providers.selected_provider({"LLM_PROVIDER": " GROQ "}) == "groq"
-    assert llm_providers.selected_provider({"LLM_PROVIDER": "qwen"}) == "qwen"
+    assert llm_providers.selected_provider({"LLM_PROVIDER": "gemini"}) == "gemini"
+    assert llm_providers.PROVIDERS == ("gemini", "groq")
+    for bad in ("qwen", "gpt", "ollama"):  # removed or unknown providers are rejected, never swapped
+        try:
+            llm_providers.selected_provider({"LLM_PROVIDER": bad})
+            raise AssertionError(f"unknown provider accepted: {bad}")
+        except llm_providers.ProviderConfigError:
+            pass
+    try:
+        llm_providers.build_provider("qwen", env={})
+        raise AssertionError("build_provider accepted a removed provider")
+    except llm_providers.ProviderConfigError:
+        pass
+    assert llm_providers.timeout_seconds("gemini", {}) == 25.0
     p = llm_providers.build_provider("groq", env={"GROQ_API_KEY": FAKE_KEY, "GROQ_MODEL": "llama-3.3-70b-versatile"})
     assert isinstance(p, GroqProvider) and p.configured and p.model == "llama-3.3-70b-versatile"
     assert llm_providers.build_provider("groq", env={"GROQ_API_KEY": FAKE_KEY}).model == DEFAULT_GROQ_MODEL
@@ -226,20 +239,19 @@ def _reload_main(provider, key=None):
 
 
 def test_app_with_groq_selected():
-    """With LLM_PROVIDER=groq: DIRECT_DATABASE questions make 0 Groq, 0 Gemini and 0 Ollama calls;
+    """With LLM_PROVIDER=groq: DIRECT_DATABASE questions make 0 Groq and 0 Gemini calls;
     an explanation makes exactly one Groq call; a Groq failure never fails over to Gemini."""
     m = _reload_main("groq", FAKE_KEY)
     try:
         client = TestClient(m.app)
         health = client.get("/api/health").json()
         assert health["llm_provider"] == "groq" and health["llm_model"] == DEFAULT_GROQ_MODEL
+        assert health["llm_configured"] is True
         assert FAKE_KEY not in json.dumps(health)
         fake = FakeGroq(lambda req: httpx.Response(200, json=OK_BODY))
         m.llm_adapter.provider._client = httpx.Client(transport=httpx.MockTransport(fake))
-        ollama_calls = []
         with patch.object(genai_models.Models, "generate_content",
-                          side_effect=AssertionError("Gemini must not be called")) as gen, \
-             patch("qwen_provider.QwenProvider.generate_explanation", side_effect=ollama_calls.append):
+                          side_effect=AssertionError("Gemini must not be called")) as gen:
             direct = ("What is total revenue?", "Which platform has the highest ROAS?", "Show monthly revenue.",
                       "What is the average CTR?", "Compare TikTok and LinkedIn ROAS.")
             for q in direct:
@@ -247,7 +259,7 @@ def test_app_with_groq_selected():
                 assert body["route"] == "DIRECT_DATABASE", (q, body)
                 r = client.post("/api/query", json={"query": q}).json()
                 assert r["route"] == "DIRECT_DATABASE" and "llm" not in r
-            assert len(fake.requests) == 0 and ollama_calls == []
+            assert len(fake.requests) == 0
 
             body = client.post("/api/chat", json={"messages": [{"role": "user", "content": WHY_Q}], "filters": {}}).json()
             assert body["route"] == "LLM_REQUIRED" and body["answer"].startswith("What the data shows")
@@ -258,9 +270,21 @@ def test_app_with_groq_selected():
             body = client.post("/api/chat", json={"messages": [{"role": "user", "content": WHY_Q}], "filters": {}}).json()
             assert body["route"] == "LLM_REQUIRED" and "usage limit" in body["answer"]
             assert "GEMINI_API_KEY" not in body["answer"]
-        assert gen.call_count == 0 and ollama_calls == []  # no silent failover
+        assert gen.call_count == 0  # no silent failover
     finally:
         _reload_main(None)
+    assert main.llm_adapter.provider.name == "gemini"
+
+
+def test_invalid_provider_stops_startup():
+    for bad in ("not-a-provider", "qwen"):
+        try:
+            _reload_main(bad)
+            raise AssertionError(f"startup accepted LLM_PROVIDER={bad}")
+        except llm_providers.ProviderConfigError:
+            pass
+        finally:
+            _reload_main(None)
     assert main.llm_adapter.provider.name == "gemini"
 
 
@@ -268,6 +292,8 @@ def test_app_starts_with_groq_but_no_key():
     m = _reload_main("groq", "")
     try:
         client = TestClient(m.app)
+        health = client.get("/api/health").json()
+        assert health["llm_provider"] == "groq" and health["llm_configured"] is False
         body = client.post("/api/query", json={"query": WHY_Q}).json()
         assert body["route"] == "LLM_REQUIRED" and body["analysis"]
         assert body["llm"]["error"] == "not_configured"
