@@ -120,18 +120,23 @@ class Sampler(threading.Thread):
 
 
 class ExternalServer:
-    """A server started separately (e.g. several load generators sharing one loadtest_server.py)."""
+    """A server started separately: a local loadtest_server.py (several load generators sharing
+    one server), or a deployed backend, where only client-side measurements are possible."""
 
     def __init__(self, url):
         self.base = url.rstrip("/")
-        pid = httpx.get(self.base + "/__loadtest/counters", timeout=5).json()["pid"]
-        self.proc = psutil.Process(pid)
+        self.proc = None
+        r = httpx.get(self.base + "/__loadtest/counters", timeout=90)
+        if r.status_code == 200 and "pid" in r.json():
+            self.proc = psutil.Process(r.json()["pid"])
         self.startup_s, self.startup_rss_mb = None, self.rss()
 
     def rss(self):
-        return round(self.proc.memory_info().rss / 1e6, 1)
+        return round(self.proc.memory_info().rss / 1e6, 1) if self.proc else None
 
     def counters(self):
+        if not self.proc:
+            return "not available (deployed server)"
         return httpx.get(self.base + "/__loadtest/counters", timeout=5).json()
 
     def log_problems(self):
@@ -272,19 +277,21 @@ def run_level(server, mode, workload, refs, users, n_requests, timeout_s):
                     ms, outcome = (time.perf_counter() - s) * 1000, f"transport_{type(e).__name__}"
                 results[i] = (label, ms, outcome)
 
-    sampler = Sampler(server.proc)
-    sampler.start()
+    local = server.proc is not None  # a deployed server can't be sampled from here
+    sampler = Sampler(server.proc) if local else None
+    if sampler:
+        sampler.start()
     me = psutil.Process()
-    cpu0, client_cpu0 = _cpu_s(server.proc), _cpu_s(me)
+    cpu0, client_cpu0 = (_cpu_s(server.proc) if local else 0.0), _cpu_s(me)
     psutil.cpu_percent(None)
     started = time.perf_counter()
     with ThreadPoolExecutor(users) as ex:
         for f in [ex.submit(worker) for _ in range(users)]:
             f.result()
     wall = time.perf_counter() - started
-    server_cpu, client_cpu = _cpu_s(server.proc) - cpu0, _cpu_s(me) - client_cpu0
+    server_cpu, client_cpu = (_cpu_s(server.proc) - cpu0 if local else None), _cpu_s(me) - client_cpu0
     machine_cpu = psutil.cpu_percent(None)
-    res = sampler.stop()
+    res = sampler.stop() if sampler else {}
     ok = [ms for _, ms, o in results if o == "ok"]
     outcomes = {}
     for _, _, o in results:
@@ -298,8 +305,8 @@ def run_level(server, mode, workload, refs, users, n_requests, timeout_s):
             "latency_ms": latency_stats(ok), **res,
             # Exact averages from CPU-time deltas (100 = one core fully busy); the sampled peak
             # above is coarse on Windows (15.6 ms clock ticks).
-            "server_cpu_pct_of_one_core": round(server_cpu / wall * 100, 1),
-            "server_cpu_ms_per_request": round(server_cpu * 1000 / n_requests, 2),
+            "server_cpu_pct_of_one_core": round(server_cpu / wall * 100, 1) if local else None,
+            "server_cpu_ms_per_request": round(server_cpu * 1000 / n_requests, 2) if local else None,
             "load_generator_cpu_pct_of_one_core": round(client_cpu / wall * 100, 1),
             "machine_cpu_pct_all_cores": machine_cpu,  # server + load generator + everything else
             "rss_mb_after": server.rss(),
@@ -366,7 +373,7 @@ def main():
                       f"  median={row['latency_ms'].get('median')}  p95={row['latency_ms'].get('p95')}"
                       f"  p99={row['latency_ms'].get('p99')}  max={row['latency_ms'].get('max')}"
                       f"  srv_cpu%={row['server_cpu_pct_of_one_core']} ({row['server_cpu_ms_per_request']}ms/req)"
-                      f"  client_cpu%={row['load_generator_cpu_pct_of_one_core']}  machine%={row['machine_cpu_pct_all_cores']}  rss_peak={row['rss_mb_peak']}  {row['outcomes']}",
+                      f"  client_cpu%={row['load_generator_cpu_pct_of_one_core']}  machine%={row['machine_cpu_pct_all_cores']}  rss_peak={row.get('rss_mb_peak')}  {row['outcomes']}",
                       flush=True)
             report["rss_immediately_after_mb"] = server.rss()
             time.sleep(args.cooldown)
