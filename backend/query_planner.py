@@ -652,6 +652,21 @@ def _change_ranking(plan, base):
 # Entry point
 # ---------------------------------------------------------------------------
 
+# Wording that asks for the same month compared across the years in the data.
+CROSS_YEAR_RE = re.compile(r"\bover (?:the )?years\b|\bacross (?:the )?years\b|\bfrom year to year\b"
+                           r"|\bover time\b|\bovertime\b", re.IGNORECASE)
+
+
+def normalize_cross_year(plan: Plan, question: str) -> Plan:
+    """A month with no year, in a question about change across years ("Is February spend going up
+    over the years?"), means that month in every year: a period comparison. Planners sometimes
+    return it as a month-only trend or total, which can't be run (which February?)."""
+    if (plan.intent in ("trend", "total") and plan.months and not plan.years and not plan.entities
+            and not plan.dimension and (CROSS_YEAR_RE.search(question) or qr.YEAR_GRAIN_RE.search(question))):
+        plan.intent, plan.grain = "period_comparison", "year"
+    return plan
+
+
 def answer(question: str, filters: dict, adapter, previous: Plan = None) -> PlannedAnswer:
     """One planning call at most, then data tools only. Never raises for LLM or plan problems.
     `previous`: the conversation's last analysis, sent as its compact plan (never the transcript) so
@@ -673,6 +688,7 @@ def answer(question: str, filters: dict, adapter, previous: Plan = None) -> Plan
         return PlannedAnswer([e.public], status=status)
     if not cb.VIZ_RE.search(question):
         plan.visualization = None  # a chart only when the user asked for one, whatever the plan says
+    normalize_cross_year(plan, question)
     try:
         out = execute_plan(plan, filters)
     except PlanError as e:

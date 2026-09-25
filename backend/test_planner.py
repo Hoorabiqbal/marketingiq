@@ -204,6 +204,43 @@ def test_nl16_ambiguous_question():
     assert "judgement or time reference" not in body["answer"]
 
 
+def _month_only_trend(metric, month):
+    """What openai/gpt-oss-120b actually returned for "Is February spend going up over the years?"."""
+    return plan(intent="trend", metrics=[metric], months=[month], grain="month", order="none")
+
+
+def test_month_across_years_from_a_month_only_plan():
+    import calendar
+    cases = [("Is February spend going up over the years?", "spend", 2),
+             ("Is March revenue increasing over the years?", "revenue", 3),
+             ("Compare January conversions across years.", "conversions", 1),
+             ("Show February ROAS year over year.", "roas", 2)]
+    for question, metric, month in cases:
+        body, calls = ask(question, _month_only_trend(metric, month))
+        assert body["route"] == "PLANNED_DATABASE" and calls == 1, (question, body)
+        name = calendar.month_name[month]
+        v24, v25 = (dt.get_totals({"month_from": f"{y}-{month:02d}", "month_to": f"{y}-{month:02d}"})[metric]
+                    for y in (2024, 2025))
+        assert f"{name} 2024: {fmt(metric, v24)}" in body["answer"] and f"{name} 2025: {fmt(metric, v25)}" in body["answer"]
+        verdict = "Yes, it is increasing" if v25 > v24 else "No, it is decreasing"
+        assert verdict in body["answer"], question
+        assert f"{name} 2026:" not in body["answer"]  # 2026 has only a partial January; nothing else to compare
+    # The failing production question: both complete Februaries, spend went down.
+    body, _ = ask("Is February spend going up over the years?", _month_only_trend("spend", 2))
+    assert "February 2024: $1,604,198.34" in body["answer"] and "February 2025: $1,453,139.61" in body["answer"]
+    assert "No, it is decreasing" in body["answer"]
+
+
+def test_ordinary_month_questions_are_unchanged():
+    body, calls = ask("What was February spend in 2025?", plan(metrics=["spend"], months=[2], years=[2025]))
+    assert body["route"] == "PLANNED_DATABASE" and calls == 1  # a year is given: February 2025 only
+    feb25 = dt.get_totals({"month_from": "2025-02", "month_to": "2025-02"})["spend"]
+    assert f"Spend: {fmt('spend', feb25)}" in body["answer"] and "period 2025-02 to 2025-02" in body["answer"]
+    assert "2024" not in body["answer"]
+    body, calls = ask("What was February spend?", _month_only_trend("spend", 2))  # no cross-year wording
+    assert calls == 1 and body["route"] == "NEEDS_CLARIFICATION" and "Which year" in body["answer"]
+
+
 # --- planner-assisted charts, call budget, fast paths ----------------------------------
 
 def test_planner_chart_uses_database_values():
