@@ -26,6 +26,7 @@ import re
 from dataclasses import dataclass
 
 import chart_builder
+import conversation
 import data_tools as dt
 import grounding
 import query_planner
@@ -53,11 +54,65 @@ class ChatDecision:
     answer: str                # HTML
     reason: str = None         # the LLM status, or why no data answer was given
     chart: dict = None         # a validated chart spec (chart_builder.validate_chart), or None
+    plan: object = None        # the answered request as a query_planner.Plan (conversation memory; not sent)
 
 
-def decide(question: str, has_history: bool, filters: dict, explainer) -> ChatDecision:
+def decide(question: str, has_history: bool, filters: dict, explainer, session=None) -> ChatDecision:
+    """session: the conversation's conversation.SessionState, or None for a stateless request (the
+    original contract: follow-ups that lean on earlier turns are asked to be rephrased)."""
     if not question or not question.strip():
         return ChatDecision(CLARIFY, html.escape(ASK_A_QUESTION), reason="no_question")
+    if session is not None:
+        return _decide_in_session(question, filters, explainer, session)
+    return _decide(question, has_history, filters, explainer)
+
+
+def _decide_in_session(question: str, filters: dict, explainer, session) -> ChatDecision:
+    """Small talk -> answered here. Follow-up -> resolved from the remembered plan (0 LLM calls), the
+    planner with that plan (1 call) or a clarification. Anything else -> the normal path. The
+    session keeps only the last analytical request as a plan; small talk and off-topic messages
+    leave it untouched."""
+    talk = conversation.small_talk(question)
+    if talk:
+        kind, reply = talk
+        session.turns.append({"route": "CONVERSATION", "kind": kind})
+        return ChatDecision("UNSUPPORTED" if kind == "personal" else "CONVERSATION", html.escape(reply), reason=kind)
+    res = conversation.resolve(question, session)
+    if res.kind == "clarify":
+        d = ChatDecision(CLARIFY, html.escape(res.message), reason="follow_up_unclear")
+    elif res.kind == "why":
+        d = _decide(f"Why? {conversation.describe(session.plan)}", False, filters, explainer)
+        d.plan = session.plan  # the explanation is about the remembered request; keep it
+    elif res.kind == "plan":
+        d = _run_plan(res.plan, res.notes, filters)
+    elif res.kind == "planner":
+        d = _planned(question, filters, explainer, previous=res.plan)
+    else:
+        d = _decide(question, False, filters, explainer)
+    if d.plan is not None:
+        if d.chart and not d.plan.visualization:
+            d.plan.visualization = d.chart["type"]  # a chart was shown (e.g. "Show ..."): follow-ups keep it
+        session.remember(d.plan, question, d.route, d.chart)
+    elif d.route == qr.Route.LLM_REQUIRED.value:
+        session.plan = None  # an explanation isn't a result "this" can chart or edit
+    session.turns.append({"route": d.route, "kind": res.kind})
+    return d
+
+
+def _run_plan(plan, notes: list, filters: dict) -> ChatDecision:
+    """A follow-up resolved from memory: a validated plan on the data tools, no LLM call."""
+    try:
+        a = query_planner.execute_plan(plan, filters)
+    except qr.QueryRouterError as e:
+        return ChatDecision("DATA_ERROR", html.escape(e.public_message), reason=type(e).__name__)
+    except query_planner.PlanError as e:
+        return ChatDecision(CLARIFY, html.escape(e.public), reason="follow_up_unclear")
+    answer = "<br>".join(_e(line) for line in [*a.lines, *notes])
+    return ChatDecision("CHART" if a.chart else "DIRECT_DATABASE", answer, reason="follow_up", chart=a.chart,
+                        plan=plan if a.status == "ok" else None)
+
+
+def _decide(question: str, has_history: bool, filters: dict, explainer) -> ChatDecision:
     if has_history and FOLLOW_UP_RE.search(question):
         return ChatDecision(CLARIFY, html.escape(ASK_IN_FULL), reason="follow_up")
     if chart_builder.wants_chart(question):
@@ -72,7 +127,7 @@ def decide(question: str, has_history: bool, filters: dict, explainer) -> ChatDe
     route = r["route"]
     if route == qr.Route.DIRECT_DATABASE.value:
         chart = chart_builder.from_direct_result(r) if chart_builder.SHOW_RE.search(question) else None
-        return ChatDecision(route, format_direct(r), chart=chart)
+        return ChatDecision(route, format_direct(r), chart=chart, plan=conversation.plan_from_router(r))
     if route == qr.Route.LLM_REQUIRED.value:
         llm = r["llm"]
         if llm["status"] == "ok":
@@ -92,14 +147,15 @@ PLANNER_REASONS = {"uncertain", "unresolved", "needs_planner"}
 PLANNED = "PLANNED_DATABASE"
 
 
-def _planned(question: str, filters: dict, explainer) -> ChatDecision:
+def _planned(question: str, filters: dict, explainer, previous=None) -> ChatDecision:
     try:
-        a = query_planner.answer(question, filters, explainer)
+        a = query_planner.answer(question, filters, explainer, previous=previous)
     except qr.QueryRouterError as e:
         return ChatDecision("DATA_ERROR", html.escape(e.public_message), reason=type(e).__name__)
     if a.status in ("ok", "no_data"):
         answer = "<br>".join(_e(line) for line in a.lines)
-        return ChatDecision(PLANNED, answer, reason=f"planner_{a.status}", chart=a.chart)
+        return ChatDecision(PLANNED, answer, reason=f"planner_{a.status}", chart=a.chart,
+                            plan=a.plan if a.status == "ok" else None)
     return ChatDecision(CLARIFY, "<br>".join(_e(line) for line in a.lines), reason=f"planner_{a.status}")
 
 
@@ -124,7 +180,7 @@ def _chart(question: str, filters: dict, explainer=None) -> ChatDecision:
     note = _filter_note({"filters_applied": c.filters_applied, "scope": c.scope})
     if note:
         answer += f"<br><i>Filtered view: {_e(note)}.</i>"
-    return ChatDecision("CHART", answer, reason="chart", chart=c.chart)
+    return ChatDecision("CHART", answer, reason="chart", chart=c.chart, plan=conversation.checked_plan(c.plan or {}))
 
 
 def _data_without_explanation(question: str, r: dict, notice: str) -> str:

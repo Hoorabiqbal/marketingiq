@@ -59,6 +59,7 @@ class ChartResult:
     message: str = None         # plain text: a caption (with a chart) or a clarification (without)
     route: str = "CHART"        # CHART / NEEDS_CLARIFICATION / UNSUPPORTED
     unmapped: bool = False      # the request itself couldn't be mapped (the analytics planner may try)
+    plan: dict = None           # the charted request as query_planner.Plan fields (conversation memory)
     filters_applied: dict = field(default_factory=dict)
     scope: dict = field(default_factory=dict)
 
@@ -168,10 +169,17 @@ def build_chart(question: str, filters: dict = None) -> ChartResult:
     top_n = qr.TOP_N_RE.search(text)
     notes = []
 
-    def done(spec, caption, used_scope=None):
+    years = [int(f.period[:4])] if f.period else []
+    months = [int(f.period[5:7])] if f.period and len(f.period) == 7 else []
+
+    def done(spec, caption, used_scope=None, **plan):
         spec = validate_chart(spec)
+        # What was charted, as query_planner.Plan fields: the conversation memory's follow-ups start here.
+        plan = {"entities": [], "filters": dict(used_scope or {}), "months": [], "years": [], "grain": None,
+                "conditions": [], "order": "desc", "limit": None, "dimension": None, "visualization": spec["type"],
+                **plan}
         return ChartResult(chart=spec, message=" ".join([caption, *notes]), filters_applied=filters,
-                           scope=used_scope or {})
+                           scope=used_scope or {}, plan=plan)
 
     def ask(message, unmapped=False):
         return ChartResult(route="NEEDS_CLARIFICATION", message=message, unmapped=unmapped)
@@ -201,7 +209,8 @@ def build_chart(question: str, filters: dict = None) -> ChartResult:
         suffix = (f" ({f.period})" if f.period else "") + (" — " + ", ".join(scope.values()) if scope else "")
         spec = trend_spec(results, "bar" if requested == "bar" and len(metrics) == 1 else "line", suffix)
         first, last = spec["data"][0]["month"], spec["data"][-1]["month"]
-        return done(spec, f"{spec['title']}, {first} to {last} ({len(spec['data'])} months).", scope)
+        return done(spec, f"{spec['title']}, {first} to {last} ({len(spec['data'])} months).", scope,
+                    intent="trend", metrics=metrics, grain="month", years=years, months=months)
 
     if campaigns:
         metric = next((m for m in metrics if m in CAMPAIGN_METRICS), None)
@@ -221,7 +230,7 @@ def build_chart(question: str, filters: dict = None) -> ChartResult:
         if not res["campaigns"]:
             return ask("No campaigns match the current filters.")
         spec = campaign_spec(res["campaigns"], metric, order)
-        return done(spec, f"{spec['title']}.", scope)
+        return done(spec, f"{spec['title']}.", scope, intent="campaign_list", metrics=[metric], order=order, limit=n)
 
     if dimension:
         metric = metrics[0]
@@ -245,7 +254,8 @@ def build_chart(question: str, filters: dict = None) -> ChartResult:
                            "can't be shown as shares of a total. Try a bar chart instead.")
             dim_label = dimension.replace("_", " ").title()
             spec = rank_spec(rows, dimension, metric, "pie", f"{LABELS[metric]} Share by {dim_label}")
-            return done(spec, f"{spec['title']}: each slice is its share of the total.", scope)
+            return done(spec, f"{spec['title']}: each slice is its share of the total.", scope,
+                        intent="breakdown", metrics=[metric], dimension=dimension)
         if requested == "line":
             notes.append("Shown as a bar chart: line charts are used for monthly trends.")
         order = qr._rank_order(text, metric)
@@ -260,7 +270,28 @@ def build_chart(question: str, filters: dict = None) -> ChartResult:
                 notes.append(f"Showing the {'lowest' if order == 'asc' else 'top'} {limit} of {len(rows)}.")
             rows = rows[:limit]
         spec = rank_spec(rows, res["dimension"], res["metric"])
-        return done(spec, f"{spec['title']}, {'lowest' if order == 'asc' else 'highest'} first.", scope)
+        plan = ({"intent": "compare_entities", "entities": picked} if len(picked) >= 2 else
+                {"intent": "breakdown", "limit": limit if top_n else None})
+        return done(spec, f"{spec['title']}, {'lowest' if order == 'asc' else 'highest'} first.", scope,
+                    metrics=[res["metric"]], dimension=res["dimension"], order=order, **plan)
+
+    # Two or more named values of one dimension, no breakdown word: "Google Ads vs TikTok spend chart".
+    same_dim = [(d, v) for d, v in f.entities if f.entities and d == f.entities[0][0]]
+    if len(same_dim) >= 2:
+        dim, names, metric = same_dim[0][0], [v for _, v in same_dim], metrics[0]
+        if requested == "pie":
+            notes.append("Shown as a bar chart: a few named values aren't parts of one whole.")
+        elif requested == "line":
+            notes.append("Shown as a bar chart: line charts are used for monthly trends.")
+        scope = {k: v for k, v in scope.items() if k != qr.ENTITY_FILTER_KEYS.get(dim)}
+        res = qr._execute(qr.ToolCall("compare_entities", {"dimension": dim, "names": names},
+                                      extra_filters=scope or None), filters)
+        rows = sorted((r for r in res["results"] if r.get(metric) is not None), key=lambda r: r[metric], reverse=True)
+        if not rows:
+            return ask("No campaigns match the current filters.")
+        spec = rank_spec(rows, dim, metric, "bar", f"{LABELS[metric]}: " + " vs ".join(r["name"] for r in rows))
+        return done(spec, f"{spec['title']}.", scope, intent="compare_entities", metrics=[metric], dimension=dim,
+                    entities=names)
 
     return ask(f"How should I break down {_label(metrics[0])}? For example: \"Line chart of monthly "
                f"{_label(metrics[0])}\" or \"Bar chart of {_label(metrics[0])} by platform\".", unmapped=True)

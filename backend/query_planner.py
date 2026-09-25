@@ -281,6 +281,22 @@ def validate_plan(text) -> Plan:
                 limit, None if viz == "none" else viz, None if reason == "none" else reason, notes)
 
 
+_FILTER_DIMENSION = {key: dim for dim, key in qr.ENTITY_FILTER_KEYS.items()}
+
+
+def plan_to_raw(plan: Plan) -> dict:
+    """A Plan back in the planner's JSON form, so any plan (e.g. one edited by a conversation
+    follow-up) can be re-checked by validate_plan() before it runs."""
+    return {"intent": plan.intent, "metrics": list(plan.metrics), "dimension": plan.dimension or "none",
+            "entities": list(plan.entities),
+            "filters": [{"dimension": _FILTER_DIMENSION[k], "value": v} for k, v in plan.filters.items()
+                        if k in _FILTER_DIMENSION],
+            "months": list(plan.months), "years": list(plan.years), "grain": plan.grain or "none",
+            "conditions": [{"metric": c["field"], "operator": c["operator"], "value": c["value"]} for c in plan.conditions],
+            "order": plan.order, "limit": plan.limit or 0, "visualization": plan.visualization or "none",
+            "reason": "none"}
+
+
 # ---------------------------------------------------------------------------
 # Execution: existing data tools only; every conclusion computed here
 # ---------------------------------------------------------------------------
@@ -405,7 +421,18 @@ def _breakdown(plan, base):
         lines.append(f"{i}. {r['name']}: {_fmt(metric, r[metric])}{extra}")
     chart = None
     if plan.visualization:
-        chart = _chart(cb.rank_spec(rows, plan.dimension, metric, "pie" if plan.visualization == "pie" else "bar"))
+        kind = "pie" if plan.visualization == "pie" else "bar"
+        if kind == "pie" and metric not in cb.PIE_METRICS:
+            lines.append(f"{LABELS[metric]} values don't add up to a total, so a pie chart would mislead; "
+                         "shown as a bar chart instead.")
+            kind = "bar"
+        elif plan.visualization == "line":
+            lines.append("Shown as a bar chart: line charts are used for trends over time.")
+        title = f"{LABELS[metric]} Share by {plan.dimension.replace('_', ' ').title()}" if kind == "pie" else None
+        chart = _chart(cb.rank_spec(rows, plan.dimension, metric, kind, title))
+        if chart is None and kind == "pie":
+            lines.append("A pie chart would mislead here (too many slices or negative values); shown as a bar chart.")
+            chart = _chart(cb.rank_spec(rows, plan.dimension, metric, "bar"))
         if chart is None:
             lines.append("A chart of this breakdown would be misleading, so the figures are shown as text.")
     return PlannedAnswer([x for x in (*lines, _scope_line(plan, period), _partial_note(period)) if x], chart)
@@ -424,6 +451,9 @@ def _compare(plan, base):
         lines.insert(0, f"{ranked[0]['name']} has the highest {LABELS[m]} of those compared "
                         f"({_fmt(m, ranked[0][m])}); {ranked[-1]['name']} has the lowest ({_fmt(m, ranked[-1][m])}).")
     chart = _chart(cb.rank_spec(ranked, plan.dimension, m)) if plan.visualization else None
+    if chart and plan.visualization in ("pie", "line"):
+        lines.append("Shown as a bar chart: " + ("a few named values aren't parts of one whole."
+                                                 if plan.visualization == "pie" else "line charts are for trends over time."))
     return PlannedAnswer([x for x in (*lines, _scope_line(plan, period), _partial_note(period)) if x], chart)
 
 
@@ -492,6 +522,9 @@ def _periods(plan, base):
     scope = _scope_line(plan, {})
     chart = None
     if plan.visualization and complete:
+        if plan.visualization in ("pie", "line"):
+            lines.append("Shown as a bar chart: each bar is one period, and a pie can't show change over time."
+                         if plan.visualization == "pie" else "Shown as a bar chart, one bar per period.")
         m = plan.metrics[0]
         rows = [{"name": _period_label(*p), m: t[m]} for p, t in complete if t[m] is not None]
         chart = _chart({"type": "bar", "title": f"{what} {LABELS[m]} by Year".strip(), "x_key": "name", "x_label": "Period",
@@ -527,6 +560,8 @@ def _trend(plan, base):
     if plan.visualization and full:
         ms = [m for m in plan.metrics if all(t[m] is not None for _, t in full)]
         units = {cb.UNITS[m] for m in ms}
+        if plan.visualization == "pie":
+            lines.append("A pie chart can't show change over time; shown as a line chart instead.")
         if ms and len(units) == 1:
             results = {m: {"series": [{"month": mo, "value": t[m]} for mo, t in full]} for m in ms}
             chart = _chart(cb.trend_spec(results, "bar" if plan.visualization == "bar" and len(ms) == 1 else "line"))
@@ -574,11 +609,17 @@ def _change_ranking(plan, base):
 # Entry point
 # ---------------------------------------------------------------------------
 
-def answer(question: str, filters: dict, adapter) -> PlannedAnswer:
-    """One planning call at most, then data tools only. Never raises for LLM or plan problems."""
+def answer(question: str, filters: dict, adapter, previous: Plan = None) -> PlannedAnswer:
+    """One planning call at most, then data tools only. Never raises for LLM or plan problems.
+    `previous`: the conversation's last analysis, sent as its compact plan (never the transcript) so
+    references like "that" or "instead" can be resolved."""
     if adapter is None or not getattr(adapter.provider, "configured", False):
         return PlannedAnswer([FAILED], status="llm_error")
-    result = adapter.plan(question, system_prompt(), SCHEMA)
+    prompt = question
+    if previous is not None:
+        prompt = (f"Previous analysis in this conversation, as a plan (resolve words like this, that, same, "
+                  f"instead or it against it): {json.dumps(plan_to_raw(previous))}\nQuestion: {question}")
+    result = adapter.plan(prompt, system_prompt(), SCHEMA)
     if result["status"] != "ok":
         return PlannedAnswer([FAILED], status="llm_error")
     try:

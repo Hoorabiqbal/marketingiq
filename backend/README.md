@@ -288,6 +288,7 @@ python test_groq_provider.py
 python test_grounding.py
 python test_charts.py
 python test_planner.py
+python test_conversation.py
 ```
 
 ## Adding a new askable dimension or metric
@@ -314,6 +315,11 @@ The backend runs as a Render web service; the frontend (`site/`) is a static sit
 - **CORS:** only `CORS_ALLOW_ORIGINS` (default `https://marketingiqp.netlify.app`) and pages
   served from localhost / 127.0.0.1 may call the API from a browser.
 - **Answers are HTML-escaped** on every path (the dashboard renders them as HTML).
+- **Conversation memory** (follow-ups such as "make it a chart" or "what about February?") is kept
+  per browser conversation id in this process's memory only (`conversation.py`: at most 2,000
+  sessions, 4 hours each, only the last request's structured plan). A restart, redeploy or free-tier
+  cold start forgets it; the chat still shows the earlier messages (kept in the browser) but the next
+  follow-up needs a full question.
 
 Environment variables (see `.env.example`; never commit keys):
 

@@ -490,6 +490,9 @@
   .chat-chart .cc-hit { fill: transparent; cursor: crosshair; }
   .chat-chart .cc-hit:hover { fill: var(--accent); fill-opacity: .07; }
   .chat-chart .cc-mark:hover { opacity: .8; }
+  .chat-new { float: right; font-size: 10.5px; color: var(--text-muted); background: none; border: 1px solid var(--glass-2-border); border-radius: 10px; padding: 1px 9px; cursor: pointer; }
+  .chat-new:hover { color: var(--accent); border-color: var(--accent); }
+  .chat-send:disabled { opacity: .55; cursor: progress; }
   .chat-input-row { display: flex; gap: 8px; margin-top: 8px; }
   .chat-input { flex: 1; background: var(--glass-2-bg); -webkit-backdrop-filter: blur(var(--glass-blur-2)); backdrop-filter: blur(var(--glass-blur-2)); border: 1px solid var(--glass-2-border); color: var(--text-primary); border-radius: 8px; padding: 8px 11px; font-size: 12px; box-shadow: var(--shadow-glass-1); }
   .chat-send { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: white; border: none; border-radius: 8px; padding: 8px 16px; font-size: 12px; font-weight: 500; cursor: pointer; box-shadow: 0 6px 18px rgba(91,110,245,.28); }
@@ -775,7 +778,7 @@
   <div class="page" id="page-ai">
     <div class="row" style="grid-template-columns: 1.7fr 1fr; flex:1;">
       <div class="card" style="min-height: 420px;">
-        <div class="card-title">Data-grounded AI Analyst</div>
+        <div class="card-title">Data-grounded AI Analyst <button class="chat-new" type="button" onclick="newChat()" title="Start a new conversation">New chat</button></div>
         <div style="margin-bottom:8px;">
           <span class="quick-prompt" onclick="askQuick('Which channel has the highest ROAS?')">Highest ROAS channel?</span>
           <span class="quick-prompt" onclick="askQuick('Where are we wasting budget?')">Where are we wasting budget?</span>
@@ -1278,27 +1281,75 @@ const AI_BACKEND_BASE = ['localhost', '127.0.0.1'].includes(location.hostname)
   ? 'http://127.0.0.1:8000'
   : 'https://marketingiq-backend.onrender.com';
 const AI_BACKEND_URL = AI_BACKEND_BASE + '/api/chat';
-let chatHistory = []; // {role:'user'|'assistant', content:string} — gives the AI real follow-up context
+// Conversation: an opaque id this browser generates (no personal data) lets the backend keep the
+// structured context of this AI Analyst conversation, so follow-ups ("make it a chart", "what about
+// February?") work. The rendered messages are kept locally so a page refresh restores the chat.
+const CHAT_SESSION_KEY = 'miq-chat-session', CHAT_LOG_KEY = 'miq-chat-log', CHAT_LOG_MAX = 40, CHAT_SEND_MAX = 6;
+function chatLoad(key){ try{ return localStorage.getItem(key); }catch(e){ return null; } }
+function chatStore(key, value){ try{ value == null ? localStorage.removeItem(key) : localStorage.setItem(key, value); }catch(e){} }
+function newChatSessionId(){
+  try{ if (crypto.randomUUID) return crypto.randomUUID(); }catch(e){}
+  return Array.from({length: 32}, () => Math.floor(Math.random() * 16).toString(16)).join('');
+}
+let chatSessionId = chatLoad(CHAT_SESSION_KEY) || newChatSessionId();
+chatStore(CHAT_SESSION_KEY, chatSessionId);
+let chatHistory = []; // recent {role, content} only; the backend holds the structured context
+let chatLog = [];     // rendered messages for refresh: {role:'user', text} | {role:'ai', html, chart}
+try{ chatLog = JSON.parse(chatLoad(CHAT_LOG_KEY) || '[]'); if (!Array.isArray(chatLog)) chatLog = []; }catch(e){ chatLog = []; }
+let chatBusy = false;
+const CHAT_WELCOME = document.getElementById('chat-messages').innerHTML;
+
+function saveChatLog(){ chatLog = chatLog.slice(-CHAT_LOG_MAX); chatStore(CHAT_LOG_KEY, JSON.stringify(chatLog)); }
+function renderChatEntry(entry){
+  const msg = document.createElement('div');
+  msg.className = 'msg ' + (entry.role === 'user' ? 'user' : 'ai');
+  if (entry.role === 'user') msg.textContent = entry.text;
+  else { msg.innerHTML = entry.html; if (entry.chart) appendChatChart(msg, entry.chart); } // server-escaped HTML
+  document.getElementById('chat-messages').appendChild(msg);
+  return msg;
+}
+function restoreChat(){
+  if (!chatLog.length) return;
+  chatLog.forEach(renderChatEntry);
+  chatHistory = chatLog.slice(-CHAT_SEND_MAX).map(e => ({role: e.role === 'user' ? 'user' : 'assistant', content: e.role === 'user' ? e.text : e.html}));
+  const box = document.getElementById('chat-messages'); box.scrollTop = box.scrollHeight;
+}
+function newChat(){
+  if (chatBusy) return;
+  chatSessionId = newChatSessionId(); chatStore(CHAT_SESSION_KEY, chatSessionId);
+  chatLog = []; chatHistory = []; chatStore(CHAT_LOG_KEY, null);
+  document.getElementById('chat-messages').innerHTML = CHAT_WELCOME;
+  document.getElementById('chat-input').focus();
+}
+function setChatBusy(busy){
+  chatBusy = busy;
+  const btn = document.querySelector('.chat-send');
+  if (btn){ btn.disabled = busy; btn.setAttribute('aria-busy', String(busy)); }
+}
 
 function askQuick(q){ document.getElementById('chat-input').value=q; sendChat(); }
 
 async function sendChat(){
+  if (chatBusy) return; // one request at a time: no accidental duplicates
   const input=document.getElementById('chat-input'), q=input.value.trim();
   if(!q)return;
+  setChatBusy(true);
   const box=document.getElementById('chat-messages');
-  box.insertAdjacentHTML('beforeend',`<div class="msg user">${escapeHtml(q)}</div>`);
+  renderChatEntry({role:'user', text:q});
+  chatLog.push({role:'user', text:q}); saveChatLog();
   input.value=''; box.scrollTop=box.scrollHeight;
   chatHistory.push({role:'user', content:q});
+  chatHistory = chatHistory.slice(-CHAT_SEND_MAX);
 
   const thinkingId = 'thinking-'+Date.now();
-  box.insertAdjacentHTML('beforeend',`<div class="msg ai" id="${thinkingId}" style="color:var(--text-muted);">Thinking…</div>`);
+  box.insertAdjacentHTML('beforeend',`<div class="msg ai" id="${thinkingId}" style="color:var(--text-muted);">Analyzing…</div>`);
   box.scrollTop=box.scrollHeight;
 
   try{
     const res = await fetch(AI_BACKEND_URL, {
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ messages: chatHistory, filters: filterState })
+      body: JSON.stringify({ messages: chatHistory, filters: filterState, session_id: chatSessionId })
     });
     if(!res.ok) throw new Error('Backend returned status '+res.status);
     const data = await res.json();
@@ -1307,11 +1358,14 @@ async function sendChat(){
     msg.className = 'msg ai';
     msg.innerHTML = answer; // server-escaped HTML, as before
     if (data.chart) appendChatChart(msg, data.chart);
-    document.getElementById(thinkingId).replaceWith(msg);
+    document.getElementById(thinkingId).replaceWith(msg); // shown as soon as it arrives
     chatHistory.push({role:'assistant', content: answer});
+    chatLog.push({role:'ai', html: answer, chart: data.chart || null}); saveChatLog();
   }catch(err){
     document.getElementById(thinkingId).outerHTML = `<div class="msg ai" style="color:var(--negative);">Couldn't reach the AI Analyst backend (${escapeHtml(err.message)}). Make sure the FastAPI server is running — see backend/README.md.</div>`;
     chatHistory.pop(); // don't keep an unanswered question in context
+  }finally{
+    setChatBusy(false);
   }
   box.scrollTop=box.scrollHeight;
 }
@@ -1533,6 +1587,7 @@ function decorateKpis(){
 }
 function markVisualCards(){
   document.querySelectorAll('.card').forEach(card=>{
+    if(card.querySelector('#chat-messages')) return; // chat answers can hold charts; the chat card isn't a visual
     const visual=card.querySelector('svg, .chart-host, .rank-list, .funnel-stage, .contrib-row');
     if(!visual) return;
     card.classList.add('visual-card');
@@ -1604,6 +1659,10 @@ function renderAll(){
 }
 renderAll();
 bindStaticChartTooltips();
+restoreChat();
+// Wake the backend while the dashboard loads (a sleeping free-tier instance otherwise makes the
+// first question wait for it to start). Fire and forget.
+fetch(AI_BACKEND_BASE + '/api/health', {cache: 'no-store'}).catch(() => {});
 // Optional deep link: dashboard.html#campaigns opens straight to that page.
 // Falls back to the default (Overview) if the hash is missing or unrecognized.
 const _initialHash = location.hash.replace('#','');

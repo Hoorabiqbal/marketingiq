@@ -26,6 +26,7 @@ from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
 import chat_routing
+import conversation
 import data_tools as dt
 import llm_providers
 import query_router as qr
@@ -71,6 +72,13 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     messages: list[ChatMessage]
     filters: dict = {}
+    # Opaque id the browser generates for its AI Analyst conversation; enables follow-ups.
+    session_id: str | None = Field(default=None, max_length=64)
+
+
+# Conversation memory: compact structured state per session, in this process only (bounded; a
+# restart starts every conversation fresh).
+sessions = conversation.SessionStore()
 
 
 @app.post("/api/chat")
@@ -81,7 +89,8 @@ def chat(req: ChatRequest):
     started = time.perf_counter()
     last = req.messages[-1] if req.messages else None
     question = last.content if last is not None and last.role == "user" else ""
-    decision = chat_routing.decide(question, len(req.messages) > 1, req.filters or {}, llm_adapter)
+    decision = chat_routing.decide(question, len(req.messages) > 1, req.filters or {}, llm_adapter,
+                                   session=sessions.get(req.session_id))
     qr.logger.info(json.dumps({"event": "chat_answered", "route": decision.route, "reason": decision.reason,
                                "elapsed_ms": round((time.perf_counter() - started) * 1000, 2)}))
     return {"answer": decision.answer, "route": decision.route, "chart": decision.chart}
