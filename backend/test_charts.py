@@ -135,11 +135,14 @@ def test_invalid_metric():
 
 
 def test_invalid_chart_type():
-    body, calls = ask("Make a scatter plot of spend and revenue")
+    # Scatter plots are supported now (test_general_analytics.py); a heatmap still isn't.
+    body, calls = ask("Make a heatmap chart of spend by platform")
     assert body["route"] == "NEEDS_CLARIFICATION" and body["chart"] is None and calls == 0
     spec = copy.deepcopy(chart("Plot monthly spend."))
-    spec["type"] = "scatter"
+    spec["type"] = "heatmap"
     expect_invalid(spec, "unknown chart type")
+    spec["type"] = "scatter"  # a known type, but not for a monthly series
+    expect_invalid(spec, "not months")
 
 
 def test_non_finite_values_rejected():

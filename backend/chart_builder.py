@@ -15,19 +15,22 @@ import math
 import re
 from dataclasses import dataclass, field
 
-import grounding
+import grounding  # noqa: F401
 import query_router as qr
+import schema_catalog as catalog
 
-CHART_TYPES = {"line", "bar", "pie"}
+CHART_TYPES = {"line", "bar", "pie", "stacked_bar", "stacked_percent", "scatter"}
+MAX_CHART_SERIES = 12   # grouped / stacked / multi-line series in one chart
+MAX_SCATTER_POINTS = 1000
+GENERIC_KEY_RE = re.compile(r"^s\d{1,2}$")  # series that are entities (one line per platform, ...)
+STACKED = ("stacked_bar", "stacked_percent")  # parts of a whole
 MAX_CATEGORIES = 20   # bars / top-N items in one chat chart
 MAX_PIE_SLICES = 10
 MAX_SERIES = 3
 MAX_POINTS = 120      # monthly points (the dataset spans 25 months)
 X_KEYS = {"month": "Month", "campaign": "Campaign", "name": None}  # None: the dimension's own label
-UNITS = {m: unit for m, (unit, _) in grounding.METRICS.items()}
-LABELS = {"campaign_count": "Campaigns", "spend": "Spend", "revenue": "Revenue", "profit": "Profit",
-          "conversions": "Conversions", "clicks": "Clicks", "impressions": "Impressions", "roas": "ROAS",
-          "roi_pct": "ROI", "cpa": "CPA", "cpc": "CPC", "ctr": "CTR", "conversion_rate": "Conversion Rate"}
+UNITS = {m.name: m.unit for m in catalog.METRICS.values()}
+LABELS = {m.name: m.label for m in catalog.METRICS.values()}
 # Additive, never-negative-by-definition totals: the only metrics a pie can split into parts.
 PIE_METRICS = {"spend", "revenue", "conversions", "clicks", "impressions", "campaign_count", "profit"}
 CAMPAIGN_METRICS = {"spend", "revenue", "profit", "roas", "cpa", "conversion_rate"}  # filter_campaigns columns
@@ -46,7 +49,8 @@ SCRIPT_RE = _c(r"javascript:|data:|on\w+\s*=|<script")
 
 WHICH_METRIC = ("Which metric would you like me to visualize? For example: \"Show monthly revenue as a line "
                 "chart\", \"Bar chart of ROAS by platform\" or \"Top 5 campaigns by revenue\".")
-TYPES_HINT = "I can draw line charts (monthly trends), bar charts (comparisons and rankings) and pie charts (shares)."
+TYPES_HINT = ("I can draw line charts (trends), bar charts (rankings, grouped or stacked comparisons), pie charts "
+              "(shares) and scatter plots (relationships between two measures).")
 
 
 class ChartSpecError(ValueError):
@@ -307,6 +311,24 @@ def _text(value, what: str) -> str:
     return value
 
 
+def _series_metric(s: dict) -> str:
+    """Metric behind a series entry. Legacy form: {key: metric, label, unit}. Generic form (series
+    that are entities, e.g. one line per platform): {key: "s0".."s11" or the metric, label, unit, metric}."""
+    fields = set(s) if isinstance(s, dict) else set()
+    if fields == {"key", "label", "unit"}:
+        if s["key"] not in LABELS or s["label"] != LABELS[s["key"]] or s["unit"] != UNITS[s["key"]]:
+            raise ChartSpecError(f"unknown metric or unit {s.get('key')!r}")
+        return s["key"]
+    if fields == {"key", "label", "unit", "metric"}:
+        if s["metric"] not in LABELS or s["unit"] != UNITS[s["metric"]]:
+            raise ChartSpecError(f"unknown metric or unit {s.get('metric')!r}")
+        if not (GENERIC_KEY_RE.match(str(s["key"])) or s["key"] == s["metric"]):
+            raise ChartSpecError(f"bad series key {s.get('key')!r}")
+        _text(s["label"], "series label")
+        return s["metric"]
+    raise ChartSpecError("series entries need exactly key, label, unit (generic series: plus metric)")
+
+
 def validate_chart(spec) -> dict:
     """Deterministic contract check. Returns the spec unchanged, or raises ChartSpecError."""
     if not isinstance(spec, dict):
@@ -324,26 +346,29 @@ def validate_chart(spec) -> dict:
         raise ChartSpecError(f"unknown x_key {x_key!r}")
     if chart_type == "line" and x_key != "month":
         raise ChartSpecError("line charts are for monthly series")
+    if chart_type == "scatter" and x_key == "month":
+        raise ChartSpecError("a scatter plot relates two measures, not months")
 
     series = spec["series"]
-    if not isinstance(series, list) or not 1 <= len(series) <= MAX_SERIES:
-        raise ChartSpecError("series must be a list of 1-3 entries")
-    keys = []
-    for s in series:
-        if not isinstance(s, dict) or set(s) != {"key", "label", "unit"}:
-            raise ChartSpecError("series entries need exactly key, label, unit")
-        if s["key"] not in LABELS or s["label"] != LABELS[s["key"]] or s["unit"] != UNITS[s["key"]]:
-            raise ChartSpecError(f"unknown metric or unit {s.get('key')!r}")
-        keys.append(s["key"])
+    if not isinstance(series, list) or not 1 <= len(series) <= MAX_CHART_SERIES:
+        raise ChartSpecError(f"series must be a list of 1-{MAX_CHART_SERIES} entries")
+    metrics = [_series_metric(s) for s in series]
+    keys = [s["key"] for s in series]
     if len(set(keys)) != len(keys):
         raise ChartSpecError("duplicate series")
-    if len({s["unit"] for s in series}) > 1:
+    if chart_type == "scatter":
+        if len(series) != 2:
+            raise ChartSpecError("a scatter plot needs exactly two measures (x, y)")
+    elif len({s["unit"] for s in series}) > 1:
         raise ChartSpecError("series with different units")
-    if chart_type == "pie" and (len(series) != 1 or keys[0] not in PIE_METRICS):
+    if chart_type == "pie" and (len(series) != 1 or metrics[0] not in PIE_METRICS):
         raise ChartSpecError("a pie chart needs one additive metric")
+    if chart_type in STACKED and not all(m in PIE_METRICS for m in metrics):
+        raise ChartSpecError("stacked bars need additive measures")
 
     data = spec["data"]
-    limit = MAX_POINTS if x_key == "month" else (MAX_PIE_SLICES if chart_type == "pie" else MAX_CATEGORIES)
+    limit = (MAX_SCATTER_POINTS if chart_type == "scatter" else MAX_POINTS if x_key == "month"
+             else MAX_PIE_SLICES if chart_type == "pie" else MAX_CATEGORIES)
     if not isinstance(data, list) or not 1 <= len(data) <= limit:
         raise ChartSpecError(f"data must have 1-{limit} rows")
     row_keys, previous = {x_key, *keys}, None
@@ -363,8 +388,10 @@ def validate_chart(spec) -> dict:
             v = row[k]
             if not isinstance(v, (int, float)) or isinstance(v, bool) or not math.isfinite(v):
                 raise ChartSpecError(f"non-numeric or non-finite value for {k}")
-            if chart_type == "pie" and v < 0:
-                raise ChartSpecError("negative pie slice")
+            if chart_type in ("pie", *STACKED) and v < 0:
+                raise ChartSpecError("negative value in a part-to-whole chart")
+        if chart_type == "stacked_percent" and not sum(row[k] for k in keys) > 0:
+            raise ChartSpecError("each 100% stacked bar needs a positive total")
     if x_key != "month" and len({row[x_key] for row in data}) != len(data):
         raise ChartSpecError("duplicate categories")
     if chart_type == "pie" and not sum(row[keys[0]] for row in data) > 0:

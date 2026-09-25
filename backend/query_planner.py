@@ -24,19 +24,19 @@ import chart_builder as cb
 import data_tools as dt
 import grounding
 import query_router as qr
+import schema_catalog as catalog
 
 logger = logging.getLogger("marketingiq.query_router")
 
 INTENTS = ["total", "breakdown", "trend", "period_comparison", "change_ranking", "compare_entities",
-           "campaign_list", "not_answerable"]
-METRICS = ["revenue", "spend", "profit", "roas", "roi_pct", "cpa", "cpc", "ctr", "conversion_rate",
-           "conversions", "clicks", "impressions"]
-DIMENSIONS = list(dt.DIMENSION_COLUMNS)
+           "campaign_list", "relationship", "not_answerable"]
+METRICS = list(catalog.METRICS)                          # schema_catalog.py: the allowlist
+DIMENSIONS = list(dt.all_dimension_columns())
 FILTER_DIMENSIONS = list(qr.ENTITY_FILTER_KEYS)          # dimension -> dashboard filter key
 CONDITION_METRICS = sorted(dt.NUMERIC_FIELD_COLUMNS)
 OPERATORS = [">", "<", ">=", "<="]
 GRAINS = ["none", "month", "year"]
-VISUALIZATIONS = ["none", "line", "bar", "pie"]
+VISUALIZATIONS = ["none", "line", "bar", "grouped_bar", "stacked_bar", "stacked_percent", "pie", "scatter"]
 REASONS = ["none", "unknown_metric", "unknown_dimension", "ambiguous", "unavailable_period", "not_about_data"]
 MAX_METRICS, MAX_ENTITIES, MAX_FILTERS, MAX_CONDITIONS = 3, 10, 5, 3
 MAX_ROWS = cb.MAX_CATEGORIES         # rows shown / charted
@@ -70,8 +70,13 @@ SCHEMA = {
         "limit": {"type": "integer"},
         "visualization": {"type": "string", "enum": VISUALIZATIONS},
         "reason": {"type": "string", "enum": REASONS},
+        "dimension2": {"type": "string", "enum": DIMENSIONS + ["none"]},
+        "exclude": {"type": "array", "items": {"type": "string"}},
     },
 }
+CORE_FIELDS = set(SCHEMA["required"])
+EXTENDED_FIELDS = {"dimension2", "exclude"}   # optional in a plan (older plans have 13 fields)
+SCHEMA["required"] = SCHEMA["required"] + sorted(EXTENDED_FIELDS)  # strict mode: Groq always sends them
 
 LABELS = cb.LABELS
 
@@ -100,6 +105,8 @@ class Plan:
     visualization: str = None
     reason: str = None
     notes: list = field(default_factory=list)
+    dimension2: str = None                            # second breakdown (series), e.g. platform x device
+    exclude: list = field(default_factory=list)       # values of the dimension left out ("remove TikTok")
 
 
 @dataclass
@@ -108,6 +115,7 @@ class PlannedAnswer:
     chart: dict = None
     status: str = "ok"               # ok / not_answerable / invalid_plan / llm_error / no_data
     plan: Plan = None
+    charts: list = None              # when a result needs several charts (incompatible units)
 
 
 # ---------------------------------------------------------------------------
@@ -121,8 +129,7 @@ def _dataset():
     global _facts
     if _facts is None:
         fields = dt.list_available_fields()
-        values = {d: {str(v).lower(): str(v) for v in vals} for d, vals in fields["dimensions"].items()
-                  if isinstance(vals, list)}
+        values = {d.name: {v.lower(): v for v in d.values} for d in catalog.dimensions().values()}
         start, end = (date.fromisoformat(d) for d in fields["date_range"])
         _facts = {"values": values, "start": start, "end": end}
     return _facts
@@ -136,12 +143,9 @@ def system_prompt() -> str:
 You never answer the question and never write numbers from the data: the backend computes every figure.
 
 Dataset: advertising campaigns with start dates {facts['start']} to {facts['end']}.
-Metrics: revenue (aliases: sales, income, turnover), spend (ad spend, cost, budget spent), profit, roas
-(return on ad spend), roi_pct (ROI), cpa (cost per acquisition/conversion), cpc (cost per click), ctr
-(click-through rate), conversion_rate, conversions, clicks, impressions. "Performance" with no metric
-means metrics revenue, spend, roas. Any other metric: intent not_answerable, reason unknown_metric.
-Dimensions and their exact values (use these spellings):
-{dims}
+{catalog.prompt_text()}
+"Performance" with no metric means metrics revenue, spend, roas. A metric or field not listed:
+intent not_answerable, reason unknown_metric (or unknown_dimension).
 Intents:
 - total: one figure for a metric, optionally filtered or for a period.
 - breakdown: a metric by one dimension ("revenue by platform", "which platform had the highest ROAS").
@@ -152,6 +156,11 @@ Intents:
 - change_ranking: which value of a dimension changed or improved the most over time.
 - compare_entities: two or more named values of one dimension (entities: exact values).
 - campaign_list: individual campaigns, e.g. conditions [{{"metric": "spend", "operator": ">", "value": 10000}}].
+- relationship: how two metrics move together (metrics [x, y]); per campaign, or per value of a dimension.
+Up to 3 metrics. dimension2 = a second breakdown shown as series ("conversions by device and platform":
+dimension device, dimension2 platform). With several entities over time use intent trend with entities.
+exclude = dimension values to leave out. Chart types: line, bar, grouped_bar, stacked_bar (parts of a
+whole), stacked_percent (100% shares), pie (one additive metric), scatter (relationship).
 - not_answerable: the question can't be expressed with these fields (set reason: unknown_metric,
   unknown_dimension, ambiguous, unavailable_period or not_about_data).
 Fields: filters narrow the data (e.g. device Mobile, platform TikTok); years/months only when the
@@ -200,7 +209,7 @@ def validate_plan(text) -> Plan:
     except ValueError:
         raise PlanError("plan is not JSON")
     _require(isinstance(raw, dict), "plan is not an object")
-    _require(set(raw) == set(SCHEMA["required"]), "unexpected or missing plan fields")
+    _require(CORE_FIELDS <= set(raw) <= CORE_FIELDS | EXTENDED_FIELDS, "unexpected or missing plan fields")
 
     intent, metrics = raw["intent"], raw["metrics"]
     _require(intent in INTENTS, "unknown intent")
@@ -223,11 +232,31 @@ def validate_plan(text) -> Plan:
     _require(isinstance(dimension, str) and dimension in DIMENSIONS + ["none"], "unknown dimension")
     dimension = None if dimension == "none" else dimension
 
+    dimension2 = raw.get("dimension2", "none")
+    _require(isinstance(dimension2, str) and dimension2 in DIMENSIONS + ["none"], "unknown dimension2")
+    dimension2 = None if dimension2 == "none" else dimension2
+    if dimension2:
+        _require(dimension is not None and dimension2 != dimension, "dimension2 needs a different dimension")
+        if dimension2 not in FILTER_DIMENSIONS:  # series are built by filtering on dimension2's values
+            _require(dimension in FILTER_DIMENSIONS, "neither dimension can be split",
+                     f"I can't cross {dimension.replace('_', ' ')} with {dimension2.replace('_', ' ')}.")
+            dimension, dimension2 = dimension2, dimension
+
     entities = raw["entities"]
     _require(isinstance(entities, list) and len(entities) <= MAX_ENTITIES, "bad entities")
+    entity_dimension = dimension
     if entities:
-        _require(dimension is not None and dimension in _dataset()["values"], "entities without a listable dimension")
-        entities = list(dict.fromkeys(_value_of(dimension, e) for e in entities))
+        if dimension2 and all(isinstance(e, str) and e.strip().lower() in _dataset()["values"].get(dimension2, {})
+                              for e in entities):
+            entity_dimension = dimension2  # series restricted to these values
+        _require(entity_dimension is not None and entity_dimension in _dataset()["values"],
+                 "entities without a listable dimension")
+        entities = list(dict.fromkeys(_value_of(entity_dimension, e) for e in entities))
+    exclude = raw.get("exclude", [])
+    _require(isinstance(exclude, list) and len(exclude) <= MAX_ENTITIES, "bad exclude")
+    if exclude:
+        _require(entity_dimension is not None, "exclude without a dimension")
+        exclude = list(dict.fromkeys(_value_of(entity_dimension, e) for e in exclude))
 
     filters = {}
     _require(isinstance(raw["filters"], list) and len(raw["filters"]) <= MAX_FILTERS, "bad filters")
@@ -274,11 +303,19 @@ def validate_plan(text) -> Plan:
     needs = {"breakdown": dimension is not None, "change_ranking": dimension is not None and len(metrics) == 1,
              "compare_entities": dimension is not None and len(entities) >= 2,
              "campaign_list": metrics[0] in cb.CAMPAIGN_METRICS or bool(conditions),
-             "period_comparison": bool(months) or grain == "year"}
+             "period_comparison": bool(months) or grain == "year",
+             "relationship": len(metrics) == 2 and (dimension is not None
+                                                    or all(m in dt.CAMPAIGN_FIELD_COLUMNS for m in metrics))}
     _require(needs.get(intent, True), f"incomplete {intent} plan")
+    averages = [m for m in metrics if catalog.METRICS[m].aggregation == "avg"]
+    _require(not (averages and intent in ("period_comparison", "change_ranking", "campaign_list")),
+             "average metric in a period plan",
+             f"Year-over-year and change rankings aren't available for {catalog.lower_label(averages[0])} yet; "
+             "try it by month or by a breakdown." if averages else FAILED)
     order = "asc" if raw["order"] == "asc" else "desc"
+    viz = {"none": None, "grouped_bar": "bar"}.get(viz, viz)
     return Plan(intent, metrics, dimension, entities, filters, months, years, grain, conditions, order,
-                limit, None if viz == "none" else viz, None if reason == "none" else reason, notes)
+                limit, viz, None if reason == "none" else reason, notes, dimension2, exclude)
 
 
 _FILTER_DIMENSION = {key: dim for dim, key in qr.ENTITY_FILTER_KEYS.items()}
@@ -294,7 +331,7 @@ def plan_to_raw(plan: Plan) -> dict:
             "months": list(plan.months), "years": list(plan.years), "grain": plan.grain or "none",
             "conditions": [{"metric": c["field"], "operator": c["operator"], "value": c["value"]} for c in plan.conditions],
             "order": plan.order, "limit": plan.limit or 0, "visualization": plan.visualization or "none",
-            "reason": "none"}
+            "reason": "none", "dimension2": plan.dimension2 or "none", "exclude": list(plan.exclude)}
 
 
 # ---------------------------------------------------------------------------
@@ -386,6 +423,12 @@ def _chart(spec) -> dict:
 
 
 def execute_plan(plan: Plan, filters: dict) -> PlannedAnswer:
+    import analytics_engine  # generic shapes (several metrics/series, extra fields); imported here: it uses this module
+    if analytics_engine.handles(plan):
+        answer = analytics_engine.execute(plan, filters)
+        answer.lines += plan.notes
+        answer.plan = plan
+        return answer
     base = {**(filters or {}), **plan.filters}
     handler = {"total": _total, "breakdown": _breakdown, "trend": _trend, "period_comparison": _periods,
                "change_ranking": _change_ranking, "compare_entities": _compare, "campaign_list": _campaigns}[plan.intent]

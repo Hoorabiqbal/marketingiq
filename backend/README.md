@@ -289,6 +289,7 @@ python test_grounding.py
 python test_charts.py
 python test_planner.py
 python test_conversation.py
+python test_general_analytics.py
 ```
 
 ## Adding a new askable dimension or metric

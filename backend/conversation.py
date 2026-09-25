@@ -24,6 +24,8 @@ from dataclasses import dataclass, field
 import chart_builder as cb
 import query_planner as qp
 import query_router as qr
+import schema_catalog as catalog
+import semantic_parser
 
 SESSION_ID_RE = re.compile(r"^[A-Za-z0-9-]{16,64}$")
 MAX_SESSIONS = 2000
@@ -151,14 +153,15 @@ class Resolution:
     notes: list = field(default_factory=list)
 
 
-def _requested_type(text: str):
-    if re.search(r"\b(?:pie|donut|doughnut)\b", text):
-        return "pie"
-    if re.search(r"\b(?:bars?|columns?)\b", text):
-        return "bar"
-    if re.search(r"\blines?\b", text):
-        return "line"
-    return None
+TOP_RE = _c(r"\b(top|bottom|first|last)\s+(\d{1,3})\b")
+SORT_ASC_RE = _c(r"\b(?:lowest|smallest|worst|least) first\b|\bascending\b|\bsort(?:ed)? (?:it |them )?(?:by )?(?:the )?lowest\b"
+                 r"|\breverse (?:the )?order\b")
+SORT_DESC_RE = _c(r"\b(?:highest|largest|biggest|best|most) first\b|\bdescending\b")
+EXCLUDE_RE = _c(r"\b(?:remove|without|exclude|excluding|except|drop|minus|leave out|hide)\b")
+ALL_RE = _c(r"\b(?:all|every|each)\s+(?:the\s+)?(?:\w+\s+)?(?:platforms|channels|objectives|devices|verticals|industries"
+            r"|placements|formats|emotions|genders|age groups|ages|budget tiers|income brackets|interests"
+            r"|operating systems|days|quarters|sizes)\b")
+BREAKDOWN_RE = _c(r"\b(?:break(?:ing)?|split(?:ting)?)\s+(?:it|that|this|them|those)?\s*(?:down\s+)?(?:by|across|per|into)\b")
 
 
 def _months(text: str) -> list:
@@ -166,36 +169,50 @@ def _months(text: str) -> list:
 
 
 def _choose_chart(plan: qp.Plan, requested):
-    """(chart type, note) from the result's shape; (None, message) when there's nothing to chart."""
-    if plan.intent == "total":
+    """(chart type, note) from the result's shape; (None, message) when there's nothing to chart.
+    `requested` is a type the user named, "auto" or None."""
+    requested = None if requested == "auto" else requested
+    if plan.intent == "total" and not plan.dimension:
         return None, ("That result is a single figure, so there's nothing to chart. Would you like it by month "
                       "(\"monthly revenue\") or broken down (\"revenue by platform\")?")
     if plan.intent == "change_ranking":
         return None, "Change rankings are shown as text. Ask for the metric by year or by month to chart it."
+    if plan.intent == "relationship":
+        return "scatter", None
     if plan.intent == "trend":
         return requested or "line", None
-    if plan.intent == "campaign_list" and requested in ("pie", "line"):
+    if plan.intent == "campaign_list" and requested in ("pie", "line", "stacked_bar", "stacked_percent", "scatter"):
         return "bar", "Shown as a bar chart: individual campaigns aren't parts of one whole."
     return requested or "bar", None
 
 
 def resolve(question: str, state: SessionState) -> Resolution:
-    """Deterministic: is this a follow-up, and if so, what complete request does it mean?"""
+    """Deterministic: is this a follow-up, and if so, what complete request does it mean? The
+    remembered plan is edited (metric, entity, filter, period, grain, limit, order, exclusions,
+    breakdowns, chart type), then re-validated."""
     text = " ".join(question.lower().split())
     has_plan = state is not None and state.plan is not None
     if WHY_RE.match(text):
         return Resolution("why") if has_plan else Resolution("clarify", message=WHY_NO_CONTEXT)
     f = qr._parse(question, qr._get_entity_index())
-    metrics = [m for m in qr._metric_names(f) if m in qp.METRICS]
-    chart_req = bool(CHART_WORD_RE.search(text))
+    metrics = [m for m in catalog.find_metrics(text) if m in qp.METRICS]
+    named = {d for d, _ in f.entities}
+    dims = [d for d in catalog.find_dimensions(text) if d not in named]
+    requested = semantic_parser.requested_chart(text)
+    chart_req = requested is not None or bool(CHART_WORD_RE.search(text))
     months, years = _months(text), sorted({int(y) for y in YEAR_WORD_RE.findall(text)})
+    trend_req = bool(qr.TREND_RE.search(text)) and not (months or years)
+    top, asc, desc = TOP_RE.search(text), SORT_ASC_RE.search(text), SORT_DESC_RE.search(text)
+    exclude_req, all_req, split_req = EXCLUDE_RE.search(text), ALL_RE.search(text), BREAKDOWN_RE.search(text)
     ref, lead = REFERENCE_RE.search(text), LEAD_RE.search(text)
     short = len(text.split()) <= 6
-    if not (ref or lead or (not metrics and short and (f.entities or f.dimensions or months or years or chart_req))):
+    transform = trend_req or top or asc or desc or exclude_req or all_req or split_req
+    if not (ref or lead or (short and (transform or (not metrics and (f.entities or dims or months or years
+                                                                        or chart_req))))):
         return Resolution("none")
-    self_contained = metrics and not ref and (f.dimensions or qr.TOTALS_RE.search(text) or qr.TREND_RE.search(text)
-                                              or len(f.entities) >= 2 or qr.CAMPAIGN_RE.search(text))
-    if self_contained:
+    self_contained = metrics and not ref and not transform and (
+        dims or qr.TOTALS_RE.search(text) or len(f.entities) >= 2 or qr.CAMPAIGN_RE.search(text))
+    if self_contained or (metrics and not ref and qr.TREND_RE.search(text) and not lead):
         return Resolution("none")
     if not has_plan:
         if (ref or chart_req) and not metrics:
@@ -209,40 +226,82 @@ def resolve(question: str, state: SessionState) -> Resolution:
 
     if metrics:
         new.metrics, changed = metrics[:qp.MAX_METRICS], True
+        if new.intent == "relationship" and len(metrics) == 1:
+            new.intent = "breakdown" if new.dimension else "total"
 
     ents = [(d, v) for d, v in f.entities if d in qp.FILTER_DIMENSIONS]
-    if ents:
+    if ents and exclude_req:
+        d = ents[0][0]
+        drop = [v for dd, v in ents if dd == d]
+        if new.intent == "compare_entities" and new.dimension == d:
+            new.entities = [e for e in new.entities if e not in drop]
+            if len(new.entities) == 1:
+                new.intent, new.filters[qr.ENTITY_FILTER_KEYS[d]], new.entities = "total", new.entities[0], []
+                new.dimension = None
+        elif new.dimension == d or (new.dimension2 == d):
+            new.exclude = list(dict.fromkeys([*new.exclude, *drop]))
+        else:
+            return Resolution("clarify", message=f"{drop[0]} isn't part of the current result, so there's nothing to remove.")
+        changed = True
+    elif ents:
         d = ents[0][0]
         vals = [v for dd, v in ents if dd == d]
         key = qr.ENTITY_FILTER_KEYS[d]
         focus_compare = prev.intent == "compare_entities" and prev.dimension == d
         if len(vals) >= 2:
-            new.intent, new.dimension, new.entities = "compare_entities", d, vals
+            new.intent, new.dimension, new.entities = ("trend" if prev.intent == "trend" else "compare_entities"), d, vals
             new.filters.pop(key, None)
         elif COMPARE_CUE_RE.search(text) and (prev.filters.get(key) or focus_compare):
             base = prev.entities if focus_compare else [prev.filters[key]]
-            new.intent, new.dimension, new.entities = "compare_entities", d, list(dict.fromkeys(base + vals))
+            new.intent = "trend" if prev.intent == "trend" else "compare_entities"
+            new.dimension, new.entities = d, list(dict.fromkeys(base + vals))
             new.filters.pop(key, None)
         elif re.search(r"\b(?:compare|vs\.?|versus|against)\b", text):
             return Resolution("clarify", message=f"What should I compare {vals[0]} with?")
         else:
             new.filters[key] = vals[0]
+            if new.intent == "trend" and new.dimension == d:
+                new.dimension, new.entities = None, []
             if new.dimension == d and new.intent in ("breakdown", "change_ranking", "compare_entities"):
                 new.intent, new.dimension, new.entities = "total", None, []
+            if new.dimension2 == d:
+                new.dimension2 = None
         for dd, v in ents:
             if dd != d:
                 new.filters[qr.ENTITY_FILTER_KEYS[dd]] = v
         changed = True
 
-    named = {d for d, _ in f.entities}
-    dims = [d for d in f.dimensions if d not in named]
+    if all_req and dims:
+        d = dims[0]  # "now show all platforms": drop the focus, break down by it again
+        new.filters.pop(qr.ENTITY_FILTER_KEYS.get(d), None)
+        new.exclude = [] if new.dimension == d else new.exclude
+        new.limit = None  # "all" undoes an earlier "top 3"
+        if new.intent == "trend":
+            new.dimension, new.entities = d, []
+        else:
+            new.intent, new.dimension, new.entities = "breakdown", d, []
+        changed, dims = True, []
     if dims:
-        new.dimension = dims[0]
-        new.filters.pop(qr.ENTITY_FILTER_KEYS.get(dims[0]), None)
-        if new.intent not in ("breakdown", "change_ranking"):
-            new.intent, new.entities = "breakdown", []
+        if split_req and new.dimension and dims[0] != new.dimension and new.intent in ("breakdown", "compare_entities"):
+            new.dimension2 = dims[0]  # "break that down by device": a second breakdown
+            if new.intent == "compare_entities":
+                new.intent = "breakdown"
+        else:
+            new.dimension = dims[0]
+            new.filters.pop(qr.ENTITY_FILTER_KEYS.get(dims[0]), None)
+            if new.intent not in ("breakdown", "change_ranking", "trend", "relationship"):
+                new.intent, new.entities = "breakdown", []
         changed = True
 
+    if trend_req and new.intent != "trend":
+        # "monthly" / "show this over time": the same request as a monthly series
+        if new.intent == "compare_entities":
+            new.intent, new.grain = "trend", "month"
+        elif new.intent in ("breakdown", "total", "period_comparison"):
+            new.intent, new.grain, new.months = "trend", "month", []
+            if new.dimension2:
+                new.dimension2 = None
+        new.limit, changed = None, True
     if months or years:
         if new.intent == "period_comparison":
             new.months = months or new.months
@@ -257,9 +316,15 @@ def resolve(question: str, state: SessionState) -> Resolution:
             if new.intent == "trend" and months:
                 new.intent, new.grain = "total", None
         changed = True
+    if top:
+        new.limit = int(top.group(2))
+        new.order = "asc" if top.group(1) in ("bottom", "last") else "desc"
+        changed = True
+    if asc or desc:
+        new.order, changed = ("asc" if asc else "desc"), True
 
     if chart_req:
-        kind, note = _choose_chart(new, _requested_type(text))
+        kind, note = _choose_chart(new, requested)
         if kind is None:
             return Resolution("clarify", message=note)
         new.visualization = kind
@@ -268,7 +333,7 @@ def resolve(question: str, state: SessionState) -> Resolution:
         changed = True
     elif prev.visualization and changed:
         # The previous answer was a chart: keep charting while the result can be charted ("now spend").
-        keep = prev.visualization if prev.visualization == "pie" and new.intent == "breakdown" else None
+        keep = prev.visualization if prev.visualization in ("pie", *cb.STACKED) and new.intent == "breakdown" else None
         new.visualization = _choose_chart(new, keep)[0] if new.intent not in ("total", "change_ranking") else None
 
     if not changed:

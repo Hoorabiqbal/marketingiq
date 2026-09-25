@@ -31,6 +31,7 @@ import data_tools as dt
 import grounding
 import query_planner
 import query_router as qr
+import semantic_parser
 
 # Only checked when there IS earlier conversation: wording that leans on a previous turn.
 FOLLOW_UP_RE = re.compile(
@@ -55,6 +56,7 @@ class ChatDecision:
     reason: str = None         # the LLM status, or why no data answer was given
     chart: dict = None         # a validated chart spec (chart_builder.validate_chart), or None
     plan: object = None        # the answered request as a query_planner.Plan (conversation memory; not sent)
+    charts: list = None        # 2+ validated charts (different units); `chart` is always the first
 
 
 def decide(question: str, has_history: bool, filters: dict, explainer, session=None) -> ChatDecision:
@@ -109,12 +111,19 @@ def _run_plan(plan, notes: list, filters: dict) -> ChatDecision:
         return ChatDecision(CLARIFY, html.escape(e.public), reason="follow_up_unclear")
     answer = "<br>".join(_e(line) for line in [*a.lines, *notes])
     return ChatDecision("CHART" if a.chart else "DIRECT_DATABASE", answer, reason="follow_up", chart=a.chart,
-                        plan=plan if a.status == "ok" else None)
+                        plan=plan if a.status == "ok" else None, charts=a.charts)
 
 
 def _decide(question: str, has_history: bool, filters: dict, explainer) -> ChatDecision:
     if has_history and FOLLOW_UP_RE.search(question):
         return ChatDecision(CLARIFY, html.escape(ASK_IN_FULL), reason="follow_up")
+    # Shapes the router has no tool plan for (several entities over time, several metrics, two
+    # breakdowns, relationships, catalog-only fields): parsed from the schema catalog, 0 LLM calls.
+    parsed = semantic_parser.plan_for(question)
+    if parsed is not None:
+        d = _run_plan(parsed, [], filters)
+        d.reason = "schema_parse"
+        return d
     if chart_builder.wants_chart(question):
         return _chart(question, filters, explainer)
     try:
@@ -155,7 +164,7 @@ def _planned(question: str, filters: dict, explainer, previous=None) -> ChatDeci
     if a.status in ("ok", "no_data"):
         answer = "<br>".join(_e(line) for line in a.lines)
         return ChatDecision(PLANNED, answer, reason=f"planner_{a.status}", chart=a.chart,
-                            plan=a.plan if a.status == "ok" else None)
+                            plan=a.plan if a.status == "ok" else None, charts=a.charts)
     return ChatDecision(CLARIFY, "<br>".join(_e(line) for line in a.lines), reason=f"planner_{a.status}")
 
 

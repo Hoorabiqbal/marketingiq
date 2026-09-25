@@ -277,7 +277,7 @@ MALICIOUS = {
     "negative_limit": plan(intent="breakdown", dimension="platform", limit=-5),
     "bool_as_limit": plan(intent="breakdown", dimension="platform", limit=True),
     "html_js_value": plan(filters=[{"dimension": "platform", "value": "<script>alert(1)</script>"}]),
-    "unknown_chart_type": plan(intent="breakdown", dimension="platform", visualization="scatter"),
+    "unknown_chart_type": plan(intent="breakdown", dimension="platform", visualization="heatmap"),
     "bad_month": plan(intent="period_comparison", months=[13]),
     "year_outside_data": plan(years=[1999]),
     "string_metrics": plan(metrics="revenue"),

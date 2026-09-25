@@ -1304,7 +1304,7 @@ function renderChatEntry(entry){
   const msg = document.createElement('div');
   msg.className = 'msg ' + (entry.role === 'user' ? 'user' : 'ai');
   if (entry.role === 'user') msg.textContent = entry.text;
-  else { msg.innerHTML = entry.html; if (entry.chart) appendChatChart(msg, entry.chart); } // server-escaped HTML
+  else { msg.innerHTML = entry.html; appendChatCharts(msg, entry); } // server-escaped HTML
   document.getElementById('chat-messages').appendChild(msg);
   return msg;
 }
@@ -1357,10 +1357,10 @@ async function sendChat(){
     const msg = document.createElement('div');
     msg.className = 'msg ai';
     msg.innerHTML = answer; // server-escaped HTML, as before
-    if (data.chart) appendChatChart(msg, data.chart);
+    appendChatCharts(msg, data);
     document.getElementById(thinkingId).replaceWith(msg); // shown as soon as it arrives
     chatHistory.push({role:'assistant', content: answer});
-    chatLog.push({role:'ai', html: answer, chart: data.chart || null}); saveChatLog();
+    chatLog.push({role:'ai', html: answer, chart: data.chart || null, charts: data.charts || null}); saveChatLog();
   }catch(err){
     document.getElementById(thinkingId).outerHTML = `<div class="msg ai" style="color:var(--negative);">Couldn't reach the AI Analyst backend (${escapeHtml(err.message)}). Make sure the FastAPI server is running — see backend/README.md.</div>`;
     chatHistory.pop(); // don't keep an unanswered question in context
@@ -1393,9 +1393,12 @@ function ccFmt(v, unit, compact){
   const short = n => abs >= 1e9 ? (n/1e9).toFixed(1)+'B' : abs >= 1e6 ? (n/1e6).toFixed(1)+'M' : abs >= 1e3 ? (n/1e3).toFixed(1)+'K' : n.toFixed(abs < 10 && abs % 1 ? 2 : 0);
   if (unit === '$') return (v < 0 ? '-$' : '$') + (compact ? short(abs) : abs.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}));
   if (unit === 'x') return v.toFixed(2) + 'x';
-  if (unit === '%') return v.toFixed(2) + '%';
+  if (unit === '%') return (compact && abs >= 1000 ? short(v) : v.toFixed(compact && abs >= 10 ? 0 : 2)) + '%';
+  if (unit === 's') return v.toFixed(compact ? 0 : 1) + ' s';
+  if (unit === 'num') return compact ? short(v) : v.toFixed(2);
   return compact ? short(v) : Math.round(v).toLocaleString();
 }
+const ccColor = k => CC_COLORS[k % CC_COLORS.length];
 function ccXLabel(spec, x, long){
   if (spec.x_key !== 'month') return x;
   const [y, m] = x.split('-');
@@ -1414,18 +1417,23 @@ function ccTicks(lo, hi){
   if (ticks[ticks.length - 1] < hi) ticks.push(ticks[ticks.length - 1] + step);
   return ticks;
 }
+const CC_TYPES = ['line', 'bar', 'pie', 'stacked_bar', 'stacked_percent', 'scatter'];
 function ccValid(spec){
-  if (!spec || !['line','bar','pie'].includes(spec.type) || !Array.isArray(spec.series) || !Array.isArray(spec.data)) return false;
-  if (!spec.series.length || !spec.data.length || spec.series.length > 3 || spec.data.length > 120) return false;
+  if (!spec || !CC_TYPES.includes(spec.type) || !Array.isArray(spec.series) || !Array.isArray(spec.data)) return false;
+  if (!spec.series.length || !spec.data.length || spec.series.length > 12 || spec.data.length > 1000) return false;
   return spec.data.every(row => typeof row[spec.x_key] === 'string'
     && spec.series.every(s => typeof row[s.key] === 'number' && isFinite(row[s.key])));
 }
 
+// Line (one or several series), bar (one series over months, or grouped), stacked / 100% stacked bars.
 function ccCartesian(svg, spec, W){
   const H = 250, top = 10, right = 12;
-  const vals = spec.data.flatMap(r => spec.series.map(s => r[s.key]));
+  const stacked = spec.type === 'stacked_bar' || spec.type === 'stacked_percent';
+  const pct = spec.type === 'stacked_percent';
+  const totals = spec.data.map(r => spec.series.reduce((a, s) => a + r[s.key], 0));
+  const vals = stacked ? (pct ? [100] : totals) : spec.data.flatMap(r => spec.series.map(s => r[s.key]));
   const ticks = ccTicks(Math.min(0, ...vals), Math.max(0, ...vals));
-  const lo = ticks[0], hi = ticks[ticks.length - 1], unit = spec.series[0].unit;
+  const lo = ticks[0], hi = ticks[ticks.length - 1], unit = pct ? '%' : spec.series[0].unit;
   const left = 12 + Math.max(...ticks.map(t => ccFmt(t, unit, true).length)) * 6;
   const bottom = 26, plotH = H - top - bottom, plotW = W - left - right;
   const y = v => top + plotH - (v - lo) / (hi - lo) * plotH;
@@ -1446,21 +1454,59 @@ function ccCartesian(svg, spec, W){
   if (spec.type === 'line') {
     spec.series.forEach((s, k) => {
       const pts = spec.data.map((r, i) => `${cx(i).toFixed(1)},${y(r[s.key]).toFixed(1)}`).join(' ');
-      svg.appendChild(ccEl('polyline', {points:pts, fill:'none', stroke:CC_COLORS[k], 'stroke-width':2, 'stroke-linejoin':'round'}));
-      spec.data.forEach((r, i) => svg.appendChild(ccEl('circle', {cx:cx(i), cy:y(r[s.key]), r:n > 40 ? 1.5 : 2.6, fill:CC_COLORS[k]})));
+      svg.appendChild(ccEl('polyline', {points:pts, fill:'none', stroke:ccColor(k), 'stroke-width':2, 'stroke-linejoin':'round'}));
+      spec.data.forEach((r, i) => svg.appendChild(ccEl('circle', {cx:cx(i), cy:y(r[s.key]), r:n > 40 ? 1.5 : 2.6, fill:ccColor(k)})));
+    });
+  } else if (stacked) {
+    const bw = Math.max(3, band * .62);
+    spec.data.forEach((r, i) => {
+      let base = 0;
+      spec.series.forEach((s, k) => {
+        const v = pct ? (totals[i] ? r[s.key] / totals[i] * 100 : 0) : r[s.key];
+        svg.appendChild(ccEl('rect', {class:'cc-mark', x:cx(i) - bw / 2, y:y(base + v), width:bw, height:Math.max(0, y(base) - y(base + v)), fill:ccColor(k)}));
+        base += v;
+      });
     });
   } else {
     const bw = Math.max(2, band * .72 / spec.series.length);
     spec.data.forEach((r, i) => spec.series.forEach((s, k) => {
       const v = r[s.key], x = cx(i) - bw * spec.series.length / 2 + k * bw;
-      svg.appendChild(ccEl('rect', {class:'cc-mark', x, y:Math.min(y(v), y(0)), width:bw - 1, height:Math.max(1, Math.abs(y(v) - y(0))), rx:2, fill:CC_COLORS[k]}));
+      svg.appendChild(ccEl('rect', {class:'cc-mark', x, y:Math.min(y(v), y(0)), width:bw - 1, height:Math.max(1, Math.abs(y(v) - y(0))), rx:2, fill:ccColor(k)}));
     }));
   }
   spec.data.forEach((r, i) => {  // one hover band per x value, listing every series
     const w = spec.type === 'line' ? (n === 1 ? plotW : plotW / (n - 1)) : band;
     const hit = ccEl('rect', {class:'cc-hit', x:cx(i) - w / 2, y:top, width:w, height:plotH});
-    ccTip(hit, ccXLabel(spec, r[spec.x_key], true), spec.series.map(s => `${s.label}: ${ccFmt(r[s.key], s.unit)}`));
+    const lines = spec.series.map(s => `${s.label}: ${ccFmt(r[s.key], s.unit)}` + (stacked && totals[i] ? ` (${(r[s.key] / totals[i] * 100).toFixed(1)}%)` : ''));
+    if (stacked) lines.push(`Total: ${ccFmt(totals[i], spec.series[0].unit)}`);
+    ccTip(hit, ccXLabel(spec, r[spec.x_key], true), lines);
     svg.appendChild(hit);
+  });
+}
+
+// Relationship: series[0] on the x axis, series[1] on the y axis; each point is a campaign or category.
+function ccScatter(svg, spec, W){
+  const H = 270, top = 10, right = 14, bottom = 38;
+  const [sx, sy] = spec.series;
+  const xs = spec.data.map(r => r[sx.key]), ys = spec.data.map(r => r[sy.key]);
+  const xt = ccTicks(Math.min(0, ...xs), Math.max(...xs)), yt = ccTicks(Math.min(0, ...ys), Math.max(...ys));
+  const left = 16 + Math.max(...yt.map(t => ccFmt(t, sy.unit, true).length)) * 6;
+  const plotW = W - left - right, plotH = H - top - bottom;
+  const X = v => left + (v - xt[0]) / (xt[xt.length - 1] - xt[0]) * plotW;
+  const Y = v => top + plotH - (v - yt[0]) / (yt[yt.length - 1] - yt[0]) * plotH;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  yt.forEach(t => {
+    svg.appendChild(ccEl('line', {x1:left, x2:W-right, y1:Y(t), y2:Y(t), stroke:'var(--chart-grid)', 'stroke-dasharray':'3 4'}));
+    svg.appendChild(ccEl('text', {x:left-6, y:Y(t)+3, 'text-anchor':'end'}, ccFmt(t, sy.unit, true)));
+  });
+  xt.forEach(t => svg.appendChild(ccEl('text', {x:X(t), y:top + plotH + 14, 'text-anchor':'middle'}, ccFmt(t, sx.unit, true))));
+  svg.appendChild(ccEl('text', {x:left + plotW / 2, y:H - 4, 'text-anchor':'middle'}, sx.label + ' →'));
+  svg.appendChild(ccEl('text', {x:left, y:top + 8}, '↑ ' + sy.label));
+  const r = spec.data.length > 300 ? 2.2 : 3.4;
+  spec.data.forEach(row => {
+    const dot = ccEl('circle', {class:'cc-mark', cx:X(row[sx.key]), cy:Y(row[sy.key]), r, fill:CC_COLORS[0], 'fill-opacity':.55});
+    ccTip(dot, row[spec.x_key], [`${sx.label}: ${ccFmt(row[sx.key], sx.unit)}`, `${sy.label}: ${ccFmt(row[sy.key], sy.unit)}`]);
+    svg.appendChild(dot);
   });
 }
 
@@ -1488,7 +1534,7 @@ function ccPie(svg, spec, W, legend){
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
   let angle = -Math.PI / 2;
   spec.data.forEach((r, i) => {
-    const v = r[s.key], share = v / total, a2 = angle + share * 2 * Math.PI, color = CC_COLORS[i % CC_COLORS.length];
+    const v = r[s.key], share = v / total, a2 = angle + share * 2 * Math.PI, color = ccColor(i);
     const p = (a, rad) => `${(cx + rad * Math.cos(a)).toFixed(2)},${(cy + rad * Math.sin(a)).toFixed(2)}`;
     const d = share >= .9999 ? `M ${cx - R},${cy} a ${R},${R} 0 1,0 ${2 * R},0 a ${R},${R} 0 1,0 ${-2 * R},0`
       : `M ${cx},${cy} L ${p(angle, R)} A ${R},${R} 0 ${share > .5 ? 1 : 0},1 ${p(a2, R)} Z`;
@@ -1503,6 +1549,9 @@ function ccPie(svg, spec, W, legend){
   });
 }
 
+function appendChatCharts(msg, data){  // `charts` (2+ charts, e.g. different units) or the single `chart`
+  (Array.isArray(data.charts) && data.charts.length ? data.charts : (data.chart ? [data.chart] : [])).forEach(c => appendChatChart(msg, c));
+}
 function appendChatChart(msg, spec){
   if (!ccValid(spec)) return;
   const wrap = document.createElement('div'); wrap.className = 'chat-chart';
@@ -1512,9 +1561,9 @@ function appendChatChart(msg, spec){
   wrap.append(title, legend, svg);
   msg.classList.add('has-chart');
   msg.appendChild(wrap);
-  if (spec.type !== 'pie' && spec.series.length > 1) spec.series.forEach((s, k) => {
+  if (!['pie', 'scatter'].includes(spec.type) && spec.series.length > 1) spec.series.forEach((s, k) => {
     const item = document.createElement('span'), dot = document.createElement('i');
-    dot.style.background = CC_COLORS[k]; item.appendChild(dot); item.appendChild(document.createTextNode(s.label));
+    dot.style.background = ccColor(k); item.appendChild(dot); item.appendChild(document.createTextNode(s.label));
     legend.appendChild(item);
   });
   let lastW = 0;
@@ -1523,7 +1572,8 @@ function appendChatChart(msg, spec){
     if (W === lastW) return;
     lastW = W; svg.replaceChildren();
     if (spec.type === 'pie') { legend.replaceChildren(); ccPie(svg, spec, W, legend); }
-    else if (spec.type === 'bar' && spec.x_key !== 'month') ccHorizontalBars(svg, spec, W);
+    else if (spec.type === 'scatter') ccScatter(svg, spec, W);
+    else if (spec.type === 'bar' && spec.x_key !== 'month' && spec.series.length === 1) ccHorizontalBars(svg, spec, W);
     else ccCartesian(svg, spec, W);
   };
   requestAnimationFrame(draw);

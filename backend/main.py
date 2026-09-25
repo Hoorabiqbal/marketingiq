@@ -93,7 +93,10 @@ def chat(req: ChatRequest):
                                    session=sessions.get(req.session_id))
     qr.logger.info(json.dumps({"event": "chat_answered", "route": decision.route, "reason": decision.reason,
                                "elapsed_ms": round((time.perf_counter() - started) * 1000, 2)}))
-    return {"answer": decision.answer, "route": decision.route, "chart": decision.chart}
+    body = {"answer": decision.answer, "route": decision.route, "chart": decision.chart}
+    if decision.charts:  # several charts (e.g. metrics in different units); `chart` stays the first
+        body["charts"] = decision.charts
+    return body
 
 
 class QueryRequest(BaseModel):

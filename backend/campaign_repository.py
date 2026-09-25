@@ -68,6 +68,11 @@ class CampaignRepository(ABC):
         Returns [(bucket_index, {sum_column: total})] for non-empty buckets, in bucket order."""
 
     @abstractmethod
+    def aggregate_avg(self, columns: list, where: list, group_by: str = None) -> list:
+        """Mean of each column over the matching campaigns: [{"group"?, column: mean}] (one row, or one
+        per group in group order). For per-campaign averages such as bounce rate."""
+
+    @abstractmethod
     def profile(self, columns: list, date_column: str) -> dict:
         """{"distinct": {column: [non-null values]}, "date_min", "date_max", "row_count"}."""
 
@@ -186,6 +191,15 @@ class DuckDBCampaignRepository(CampaignRepository):
                f"FROM {TABLE}{where_sql}) WHERE bucket IS NOT NULL GROUP BY 1 ORDER BY 1")
         return [(r[0], dict(zip(sum_columns, r[1:]))) for r in self._run(sql, case_params + where_params)]
 
+    def aggregate_avg(self, columns, where, group_by=None):
+        where_sql, params = self._where(where)
+        avgs = ", ".join(f"AVG({self._ident(c)})" for c in columns)
+        if group_by:
+            g = self._ident(group_by)
+            rows = self._run(f"SELECT {g}, {avgs} FROM {TABLE}{where_sql} GROUP BY 1 ORDER BY 1", params)
+            return [{"group": r[0], **dict(zip(columns, r[1:]))} for r in rows]
+        return [dict(zip(columns, self._run(f"SELECT {avgs} FROM {TABLE}{where_sql}", params)[0]))]
+
     def profile(self, columns, date_column):
         # LIST keeps NULLs; they are dropped in Python (a FILTER clause here was ~3x slower).
         lists = ", ".join(f"LIST(DISTINCT {self._ident(c)})" for c in columns)
@@ -259,6 +273,13 @@ class PandasCampaignRepository(CampaignRepository):
         buckets = pd.cut(df[column], bins=edges, labels=False)
         g = df.groupby(buckets)[list(sum_columns)].sum()
         return [(int(i), row.to_dict()) for i, row in g.iterrows()]
+
+    def aggregate_avg(self, columns, where, group_by=None):
+        df = self._filtered(where)
+        if group_by:
+            g = df.groupby(group_by)[list(columns)].mean()
+            return [{"group": name, **row.to_dict()} for name, row in g.iterrows()]
+        return [{c: (df[c].mean() if len(df) else None) for c in columns}]
 
     def profile(self, columns, date_column):
         df = self._df

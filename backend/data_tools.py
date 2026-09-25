@@ -43,6 +43,31 @@ DIMENSION_COLUMNS = {
     "retargeting": "retargeting_flag",
 }
 
+# Further categorical columns, for breakdowns in the analytics planner (schema_catalog.py). They are
+# kept out of DIMENSION_COLUMNS so the Query Router's entity index ("long", "monday", ...) is unchanged.
+EXTRA_DIMENSION_COLUMNS = {
+    "day_of_week": "day_of_week",
+    "quarter": "quarter",
+    "creative_size": "creative_size",
+    "ad_copy_length": "ad_copy_length",
+    "call_to_action": "has_call_to_action",
+    "purchase_intent": "purchase_intent_score",
+}
+# Per-campaign measures reported as the mean over campaigns (not summable).
+AVG_FIELD_COLUMNS = {"bounce_rate": "bounce_rate", "avg_session_duration": "avg_session_duration_seconds",
+                     "pages_per_session": "pages_per_session", "quality_score": "quality_score"}
+AVG_DECIMALS = {"bounce_rate": 2, "avg_session_duration": 1, "pages_per_session": 2, "quality_score": 2}
+# Per-campaign numeric columns for relationships (scatter), by metric name.
+CAMPAIGN_FIELD_COLUMNS = {**{"spend": "ad_spend", "revenue": "revenue", "profit": "profit", "roas": "ROAS",
+                             "cpa": "CPA", "cpc": "CPC", "ctr": "CTR", "conversion_rate": "conversion_rate",
+                             "clicks": "clicks", "conversions": "conversions", "impressions": "impressions"},
+                          **AVG_FIELD_COLUMNS}
+
+
+def all_dimension_columns() -> dict:
+    return {**DIMENSION_COLUMNS, **EXTRA_DIMENSION_COLUMNS}
+
+
 # Maps askable "metric" names onto how to compute them. Base sums are pulled
 # straight from the data; derived metrics are computed from those sums using
 # the real formulas (never a hardcoded value).
@@ -226,6 +251,48 @@ def _metrics_from_sums(s: dict) -> dict:
         "conversion_rate": round(conversions / clicks * 100, 3) if clicks else None,
         "roi_pct": round((revenue - spend) / spend * 100, 1) if spend else None,
     }
+
+
+def metric_table(filters: dict = None, group_by: str = None) -> list:
+    """Every metric, overall (one row) or per group: group_by is a dimension name or "month".
+    Sum-based metrics come from the same formulas as get_totals (_metrics_from_sums); per-campaign
+    measures (AVG_FIELD_COLUMNS) are means. Rows: {"group": str or None, **metrics}, in group order."""
+    col = "month" if group_by == "month" else all_dimension_columns().get(group_by) if group_by else None
+    if group_by and col is None:
+        return []
+    repo = get_repository()
+    where = _filter_conditions(filters or {})
+    sums = repo.aggregate(where, group_by=col)
+    avgs = {str(r.get("group")): r for r in repo.aggregate_avg(list(AVG_FIELD_COLUMNS.values()), where, group_by=col)}
+    rows = []
+    for s in sums:
+        if not s["campaign_count"]:
+            continue
+        key = str(s["group"]) if col else None
+        a = avgs.get(key if col else "None", {})
+        m = _metrics_from_sums(s)
+        for name, c in AVG_FIELD_COLUMNS.items():
+            v = a.get(c)
+            m[name] = round(float(v), AVG_DECIMALS[name]) if v is not None else None
+        rows.append({"group": key, **m})
+    return rows
+
+
+def campaign_points(x_metric: str, y_metric: str, filters: dict = None) -> dict:
+    """Per-campaign (x, y) values for a relationship: every matching campaign, ordered by id, plus the
+    Pearson correlation over all of them (computed here from the data-layer rows)."""
+    xc, yc = CAMPAIGN_FIELD_COLUMNS[x_metric], CAMPAIGN_FIELD_COLUMNS[y_metric]
+    cols = list(dict.fromkeys(["campaign_id", "platform", xc, yc]))
+    n, rows = get_repository().find_campaigns(_filter_conditions(filters or {}), "campaign_id", True,
+                                              max(_row_count, 1), cols)
+    points = [{"id": str(r["campaign_id"]), "platform": str(r["platform"]), "x": _round2(r[xc]), "y": _round2(r[yc])}
+              for r in rows if r[xc] is not None and r[yc] is not None]
+    r_value = None
+    if len(points) >= 3:
+        xs = np.array([float(p["x"]) for p in points]); ys = np.array([float(p["y"]) for p in points])
+        if xs.std() > 0 and ys.std() > 0:
+            r_value = round(float(np.corrcoef(xs, ys)[0, 1]), 3)
+    return {"x": x_metric, "y": y_metric, "count": len(points), "correlation": r_value, "points": points}
 
 
 def _metrics_from_rows(df: pd.DataFrame) -> dict:
