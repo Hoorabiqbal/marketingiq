@@ -7,6 +7,9 @@ free-form LLM fallback.
         ├─ LLM_REQUIRED ...... data tools -> compact analysis -> LLM Adapter (one call,
         │                      grounding-validated); on an LLM error: the data summary + a notice
         ├─ UNSUPPORTED / NEEDS_CLARIFICATION ... the router's own message, no LLM call
+        ├─ router can't map it (reason uncertain / unresolved / needs_planner) ... analytics planner
+        │                      (query_planner.py): one Groq call returns a validated plan, the data
+        │                      tools compute the answer; no second LLM call
         ├─ CHART ............. explicit chart request -> data tools -> validated chart spec
         │                      (chart_builder.py), no LLM call; "Show ..." answers that are already
         │                      a series or ranking also carry the same kind of chart
@@ -25,6 +28,7 @@ from dataclasses import dataclass
 import chart_builder
 import data_tools as dt
 import grounding
+import query_planner
 import query_router as qr
 
 # Only checked when there IS earlier conversation: wording that leans on a previous turn.
@@ -44,7 +48,8 @@ ASK_IN_FULL = ("Please ask that as a complete question, for example \"What is Ti
 
 @dataclass
 class ChatDecision:
-    route: str                 # DIRECT_DATABASE / LLM_REQUIRED / UNSUPPORTED / NEEDS_CLARIFICATION / DATA_ERROR
+    route: str                 # DIRECT_DATABASE / LLM_REQUIRED / CHART / PLANNED_DATABASE / UNSUPPORTED /
+                               # NEEDS_CLARIFICATION / DATA_ERROR
     answer: str                # HTML
     reason: str = None         # the LLM status, or why no data answer was given
     chart: dict = None         # a validated chart spec (chart_builder.validate_chart), or None
@@ -56,7 +61,7 @@ def decide(question: str, has_history: bool, filters: dict, explainer) -> ChatDe
     if has_history and FOLLOW_UP_RE.search(question):
         return ChatDecision(CLARIFY, html.escape(ASK_IN_FULL), reason="follow_up")
     if chart_builder.wants_chart(question):
-        return _chart(question, filters)
+        return _chart(question, filters, explainer)
     try:
         r = qr.route_query(question, filters, explainer=explainer)
     except qr.InvalidQueryError as e:
@@ -75,14 +80,33 @@ def decide(question: str, has_history: bool, filters: dict, explainer) -> ChatDe
         if llm["status"] == "skipped":  # empty analysis: the LLM was never called
             return ChatDecision(route, html.escape(llm["message"]), reason=llm.get("error"))
         return ChatDecision(route, _data_without_explanation(question, r, llm["message"]), reason=llm.get("error"))
+    if route == CLARIFY and r.get("reason") in PLANNER_REASONS:
+        return _planned(question, filters, explainer)
     # UNSUPPORTED (data not in the dataset, off-topic) or NEEDS_CLARIFICATION: the router's message.
     return ChatDecision(route, html.escape(r.get("message") or ASK_A_QUESTION), reason=r.get("reason"))
+
+
+# Router clarifications the analytics planner may still resolve. Off-topic and unavailable-data
+# questions never reach it (no Groq call for them).
+PLANNER_REASONS = {"uncertain", "unresolved", "needs_planner"}
+PLANNED = "PLANNED_DATABASE"
+
+
+def _planned(question: str, filters: dict, explainer) -> ChatDecision:
+    try:
+        a = query_planner.answer(question, filters, explainer)
+    except qr.QueryRouterError as e:
+        return ChatDecision("DATA_ERROR", html.escape(e.public_message), reason=type(e).__name__)
+    if a.status in ("ok", "no_data"):
+        answer = "<br>".join(_e(line) for line in a.lines)
+        return ChatDecision(PLANNED, answer, reason=f"planner_{a.status}", chart=a.chart)
+    return ChatDecision(CLARIFY, "<br>".join(_e(line) for line in a.lines), reason=f"planner_{a.status}")
 
 
 CHART_FAILED = "I couldn't build a reliable chart for that request. Try asking for the figures as text."
 
 
-def _chart(question: str, filters: dict) -> ChatDecision:
+def _chart(question: str, filters: dict, explainer=None) -> ChatDecision:
     try:
         c = chart_builder.build_chart(question, filters)
     except qr.InvalidQueryError as e:
@@ -92,6 +116,8 @@ def _chart(question: str, filters: dict) -> ChatDecision:
     except chart_builder.ChartSpecError as e:
         qr.logger.warning(f"chart spec rejected: {e}")
         return ChatDecision("DATA_ERROR", html.escape(CHART_FAILED), reason="chart_invalid")
+    if c.chart is None and c.unmapped and explainer is not None and explainer.provider.configured:
+        return _planned(question, filters, explainer)
     if c.chart is None:
         return ChatDecision(c.route, html.escape(c.message), reason="chart_unresolved")
     answer = html.escape(c.message)

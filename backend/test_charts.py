@@ -8,6 +8,8 @@ rejects anything outside the contract.
 Run:  python test_charts.py      (or: pytest test_charts.py)
 """
 import copy
+import html
+import json
 import logging
 from unittest.mock import patch
 
@@ -112,11 +114,21 @@ def test_revenue_and_spend_multi_series():
 
 
 def test_invalid_metric():
-    body, calls = ask("Chart something for me")
-    assert body["route"] == "NEEDS_CLARIFICATION" and body["chart"] is None and calls == 0
-    assert "Which metric would you like me to visualize?" in body["answer"]
-    body, _ = ask("Plot monthly ROAS")  # no monthly tool for a ratio: said, not invented
-    assert body["chart"] is None and "not ROAS" in body["answer"]
+    # Without Groq, an unmappable chart request gets the chart builder's own clarification, 0 calls.
+    with patch.object(main.llm_adapter.provider, "_api_key", ""):
+        body, calls = ask("Chart something for me")
+        assert body["route"] == "NEEDS_CLARIFICATION" and body["chart"] is None and calls == 0
+        assert "Which metric would you like me to visualize?" in body["answer"]
+        body, _ = ask("Plot monthly ROAS")  # no monthly tool for a ratio: said, not invented
+        assert body["chart"] is None and "not ROAS" in body["answer"]
+    # With Groq, the analytics planner gets one try (test_planner.py covers mapped plans); a plan
+    # that can't be mapped still yields no chart.
+    not_mappable = json.dumps({"intent": "not_answerable", "metrics": [], "dimension": "none", "entities": [],
+                               "filters": [], "months": [], "years": [], "grain": "none", "conditions": [],
+                               "order": "none", "limit": 0, "visualization": "none", "reason": "ambiguous"})
+    body, calls = ask("Chart something for me", respond=fake_groq.reply(not_mappable))
+    assert body["route"] == "NEEDS_CLARIFICATION" and body["chart"] is None and calls == 1
+    assert body["answer"] == html.escape(qr.PLANNER_HINT)
     spec = copy.deepcopy(chart("Plot monthly spend."))
     spec["series"][0]["key"] = "happiness"
     expect_invalid(spec, "unknown metric")
@@ -159,7 +171,7 @@ def test_chart_requests_make_no_groq_calls():
     questions = ["Show monthly revenue as a line chart.", "Plot monthly spend.", "Show revenue by platform as a bar chart.",
                  "Create a bar chart of ROAS by platform.", "Show platform revenue share as a pie chart.",
                  "Bar chart of the top 5 campaigns by revenue.", "Compare revenue and spend over time.",
-                 "Chart something for me", "Pie chart of ROAS by platform"]
+                 "Pie chart of ROAS by platform"]
     for q in questions:
         _, calls = ask(q)
         assert calls == 0, q

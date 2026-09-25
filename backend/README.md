@@ -287,6 +287,7 @@ python test_chat_migration.py
 python test_groq_provider.py
 python test_grounding.py
 python test_charts.py
+python test_planner.py
 ```
 
 ## Adding a new askable dimension or metric

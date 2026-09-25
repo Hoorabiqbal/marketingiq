@@ -130,6 +130,11 @@ class LLMProvider(ABC):
         Must finish (or raise ProviderTimeoutError) within `timeout_s` seconds, and raise
         an LLMProviderError subclass for any failure."""
 
+    def generate_plan(self, question: str, system_prompt: str, schema: dict, timeout_s: float) -> str:
+        """Return raw JSON text of an analytics plan for `question` (query_planner.py validates it).
+        Same timeout / error contract as generate_explanation."""
+        raise ProviderNotConfiguredError(f"{self.name} cannot plan queries")
+
 
 # ---------------------------------------------------------------------------
 # Adapter
@@ -227,6 +232,32 @@ class LLMAdapter:
         text, check = self._ground(question, context, text)
         check["local_ms"] = round(local_ms + check.pop("validation_ms"), 2)
         return finish("ok", text=text, grounding=check)
+
+    def plan(self, question: str, system_prompt: str, schema: dict) -> dict:
+        """One planning call (no retry beyond the provider's own transient-error attempt), under the
+        same concurrency slots as explanations. Never raises for provider failures. The returned
+        text is untrusted: query_planner.validate_plan() must accept it before anything runs."""
+        started = time.perf_counter()
+        meta = {"provider": self.provider.name, "model": self.provider.model}
+
+        def finish(status, **fields):
+            out = {"status": status, **meta, **{k: v for k, v in fields.items() if v is not None},
+                   "elapsed_ms": round((time.perf_counter() - started) * 1000, 2)}
+            log = {k: v for k, v in out.items() if k not in ("text", "message")}
+            (logger.info if status == "ok" else logger.warning)(json.dumps({"event": "llm_plan", **log}))
+            return out
+
+        with (self.slots.acquire() if self.slots else nullcontext(True)) as got_slot:
+            if not got_slot:
+                return finish("error", error="busy", message=BUSY_MESSAGE)
+            try:
+                text = self.provider.generate_plan(question, system_prompt, schema, self.timeout_s)
+            except LLMProviderError as e:
+                return finish("error", error=e.code, message=e.public_message)
+            except Exception:
+                logger.exception("llm_adapter unexpected provider error")
+                return finish("error", error=LLMProviderError.code, message=LLMProviderError.public_message)
+        return finish("ok", text=text)
 
     def _ground(self, question: str, context: dict, text: str):
         """Every provider's answer passes the same deterministic check. An answer with a number the

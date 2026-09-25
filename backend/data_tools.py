@@ -12,6 +12,7 @@ to campaign_repository.py (DuckDB by default, Pandas as fallback/reference), so
 no function here depends on a particular database engine.
 """
 import os
+import re
 
 import numpy as np
 import pandas as pd
@@ -52,6 +53,7 @@ NUMERIC_FIELD_COLUMNS = {"spend": "ad_spend", "revenue": "revenue", "profit": "p
                          "roas": "ROAS", "cpa": "CPA", "ctr": "CTR", "conversion_rate": "conversion_rate",
                          "clicks": "clicks", "conversions": "conversions"}
 CONDITION_OPERATORS = {">", "<", ">=", "<=", "=="}
+MONTH_KEY_RE = re.compile(r"^\d{4}-(?:0[1-9]|1[0-2])$")
 
 # Creative-age buckets for get_creative_fatigue: right-closed intervals (0,15], (15,30], ...
 CREATIVE_AGE_EDGES = [0, 15, 30, 45, 60, 90]
@@ -169,6 +171,11 @@ def _filter_conditions(filters: dict) -> list:
         val = filters.get(field)
         if val:
             conditions.append((col, "=", _as_text(val)))
+    # Inclusive calendar-month range ("2025-01".."2025-12"), used by the analytics planner.
+    for key, op in (("month_from", ">="), ("month_to", "<=")):
+        val = filters.get(key)
+        if isinstance(val, str) and MONTH_KEY_RE.match(val):
+            conditions.append(("month", op, val))
     return conditions
 
 

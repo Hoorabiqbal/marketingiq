@@ -77,9 +77,31 @@ class GroqProvider(LLMProvider):
         return body
 
     def generate_explanation(self, question: str, analysis: dict, timeout_s: float) -> str:
+        return self._complete(self.request_body(question, analysis), timeout_s)
+
+    def plan_request_body(self, question: str, system_prompt: str, schema: dict) -> dict:
+        """Strict structured output (constrained decoding, supported by openai/gpt-oss-*): the reply
+        can only be JSON of `schema`. The caller still validates it before anything runs."""
+        body = {
+            "model": self.model,
+            "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": question}],
+            "temperature": 0,
+            "max_completion_tokens": MAX_COMPLETION_TOKENS,
+            "stream": False,
+            "response_format": {"type": "json_schema",
+                                "json_schema": {"name": "analytics_plan", "strict": True, "schema": schema}},
+        }
+        if _is_reasoning_model(self.model):
+            body["reasoning_effort"] = "low"
+            body["include_reasoning"] = False
+        return body
+
+    def generate_plan(self, question: str, system_prompt: str, schema: dict, timeout_s: float) -> str:
+        return self._complete(self.plan_request_body(question, system_prompt, schema), timeout_s)
+
+    def _complete(self, payload: dict, timeout_s: float) -> str:
         if not self.configured:
             raise ProviderNotConfiguredError("no GROQ_API_KEY")
-        payload = self.request_body(question, analysis)
         headers = {"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"}
         deadline = time.monotonic() + timeout_s
         last_error = None

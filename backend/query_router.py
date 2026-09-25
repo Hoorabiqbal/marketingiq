@@ -201,6 +201,13 @@ COMPARATORS = {
 }
 # Concepts the dataset does not contain — answered honestly as UNSUPPORTED rather
 # than silently routed to an unrelated tool (e.g. "revenue by country").
+# Wording the direct planner has no tool shape for: a month without a year ("January revenue across
+# years") or a year-level comparison. These go to the analytics planner (chat) instead of being
+# answered with the wrong scope. "may" is left out: it is usually the verb.
+BARE_MONTH_RE = _c(r"\b(?:january|february|march|april|june|july|august|september|october|november|december"
+                   r"|jan|feb|mar|apr|jun|jul|aug|sept?|oct|nov|dec)\b")
+YEAR_GRAIN_RE = _c(r"\byear[- ]over[- ]year\b|\byoy\b|\bacross (?:the )?years\b|\b(?:each|every|per|by) year\b"
+                   r"|\byearly\b|\bannual(?:ly)?\b")
 UNAVAILABLE_RE = _c(r"\bcountr(?:y|ies)\b|\bregions?\b|\bgeograph|\bcit(?:y|ies)\b|\blocations?\b|\bproducts?\b|\bsku\b"
                     r"|\blifetime value\b|\bltv\b|\bchurn\b")
 # Words a direct plan can't honour: qualitative judgements ("high spend", "underperforming"),
@@ -221,6 +228,8 @@ DATA_VOCAB_RE = _c(r"\bcampaigns?\b|\bads?\b|\badvertis|\bmarketing\b|\bperform|
 AMBIGUOUS_ENTITY_VALUES = {"all", "high", "low", "medium", "other", "conversions", "text",
                            "search", "true", "false"}
 
+PLANNER_HINT = ("I couldn't map that question safely to the available marketing data. Try specifying the "
+                "metric, time period, or comparison you'd like.")
 SUPPORTED_HINT = ("Try asking about revenue, spend, profit, ROAS, ROI, CPA, CPC, CTR, conversions, "
                   "clicks or impressions — overall, by platform/objective/device/audience/creative, "
                   "by month, or for campaigns above/below a threshold.")
@@ -439,9 +448,12 @@ def _plan_direct(f: _Features):
 
     if dimension and (metric or superlative or RANK_CUE_RE.search(text)):
         rank_metric = metric if metric in RANK_METRICS else "roas"
+        # Entities of other dimensions scope the ranking ("revenue by platform for mobile devices").
+        scope = {k: v for k, v in _entity_scope(f).items() if k != ENTITY_FILTER_KEYS.get(dimension)}
         return [ToolCall("rank_dimension", {"dimension": dimension, "metric": rank_metric,
                                             "order": _rank_order(text, rank_metric),
-                                            "limit": _top_n(text, 1 if superlative else 10)})], None
+                                            "limit": _top_n(text, 1 if superlative else 10)},
+                         extra_filters=scope or None)], None
 
     if f.entities:
         dim, name = f.entities[0]
@@ -527,6 +539,9 @@ def classify_query(query: str) -> Plan:
                     message="That question isn't about the MarketingIQ campaign data. " + SUPPORTED_HINT)
     if EXPLANATION_RE.search(f.text):
         return Plan(Route.LLM_REQUIRED, calls=_plan_llm_context(f), focus_metrics=focus)
+
+    if YEAR_GRAIN_RE.search(f.text) or BARE_MONTH_RE.search(MONTH_RE.sub(" ", ISO_MONTH_RE.sub(" ", f.text))):
+        return Plan(Route.NEEDS_CLARIFICATION, reason="needs_planner", message=PLANNER_HINT)
 
     if UNCERTAIN_RE.search(THRESHOLD_RE.sub(" ", f.text)):
         return Plan(Route.NEEDS_CLARIFICATION, reason="uncertain",

@@ -184,15 +184,33 @@ def _clarified(question, history=(), route=None, expect_router=True):
     return html.unescape(body["answer"])
 
 
-def test_judgement_questions_get_the_router_message():
+NOT_MAPPABLE = json.dumps({"intent": "not_answerable", "metrics": [], "dimension": "none", "entities": [],
+                           "filters": [], "months": [], "years": [], "grain": "none", "conditions": [],
+                           "order": "none", "limit": 0, "visualization": "none", "reason": "ambiguous"})
+
+
+def _planned(question):
+    """A question the router can't map goes to the analytics planner: exactly one Groq planning
+    call, never an explanation call. Here Groq's plan says it can't be mapped."""
+    with Spies(fake_groq.reply(NOT_MAPPABLE)) as s:
+        body = _assert_chat_schema(ask(question))
+    assert body["route"] == "NEEDS_CLARIFICATION" and body["chart"] is None, body
+    assert s.groq_calls == 1 and s.adapter.call_count == 0 and s.router.call_count == 1
+    return html.unescape(body["answer"])
+
+
+def test_judgement_questions_go_to_the_planner_once():
     for q in ("Which campaigns have high spend but low revenue?", "Which campaigns are underperforming?",
               "Is revenue growing?"):
-        plan = qr.classify_query(q)
-        assert _clarified(q, route=plan.route.value) == plan.message
+        assert qr.classify_query(q).route == qr.Route.NEEDS_CLARIFICATION
+        assert _planned(q) == qr.PLANNER_HINT
+        # Without a Groq key: no call at all, the same natural message.
+        with patch.object(main.llm_adapter.provider, "_api_key", ""):
+            assert _clarified(q, route="NEEDS_CLARIFICATION") == qr.PLANNER_HINT
 
 
-def test_relative_dates_and_small_talk_get_the_router_message():
-    assert "time reference" in _clarified("What was revenue last month?", route="NEEDS_CLARIFICATION")
+def test_relative_dates_and_small_talk():
+    assert _planned("What was revenue last month?") == qr.PLANNER_HINT
     assert "isn't about the MarketingIQ campaign data" in _clarified("Hi there!", route="UNSUPPORTED")
 
 

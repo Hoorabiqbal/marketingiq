@@ -58,6 +58,7 @@ class ChartResult:
     chart: dict = None          # a validated spec, or None
     message: str = None         # plain text: a caption (with a chart) or a clarification (without)
     route: str = "CHART"        # CHART / NEEDS_CLARIFICATION / UNSUPPORTED
+    unmapped: bool = False      # the request itself couldn't be mapped (the analytics planner may try)
     filters_applied: dict = field(default_factory=dict)
     scope: dict = field(default_factory=dict)
 
@@ -172,11 +173,11 @@ def build_chart(question: str, filters: dict = None) -> ChartResult:
         return ChartResult(chart=spec, message=" ".join([caption, *notes]), filters_applied=filters,
                            scope=used_scope or {})
 
-    def ask(message):
-        return ChartResult(route="NEEDS_CLARIFICATION", message=message)
+    def ask(message, unmapped=False):
+        return ChartResult(route="NEEDS_CLARIFICATION", message=message, unmapped=unmapped)
 
     if not metrics:
-        return ask(WHICH_METRIC)
+        return ask(WHICH_METRIC, unmapped=True)
 
     campaigns = qr.CAMPAIGN_RE.search(text) and (top_n or qr.SUPERLATIVE_RE.search(text)) and not dimension
     trend = not campaigns and (f.period or qr.TREND_RE.search(text) or (requested == "line" and not dimension))
@@ -185,7 +186,7 @@ def build_chart(question: str, filters: dict = None) -> ChartResult:
         wrong = [m for m in metrics if m not in qr.TREND_METRICS]
         if wrong:
             return ask("Monthly figures are available for revenue, spend, profit and conversions, "
-                       f"not {_label(wrong[0])}.")
+                       f"not {_label(wrong[0])}.", unmapped=True)
         if requested == "pie":
             return ask("A pie chart can't show change over time. Try \"Show monthly "
                        f"{_label(metrics[0])} as a line chart\".")
@@ -262,7 +263,7 @@ def build_chart(question: str, filters: dict = None) -> ChartResult:
         return done(spec, f"{spec['title']}, {'lowest' if order == 'asc' else 'highest'} first.", scope)
 
     return ask(f"How should I break down {_label(metrics[0])}? For example: \"Line chart of monthly "
-               f"{_label(metrics[0])}\" or \"Bar chart of {_label(metrics[0])} by platform\".")
+               f"{_label(metrics[0])}\" or \"Bar chart of {_label(metrics[0])} by platform\".", unmapped=True)
 
 
 # ---------------------------------------------------------------------------
