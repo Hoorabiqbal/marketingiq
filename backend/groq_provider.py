@@ -1,9 +1,10 @@
 """
-Groq (hosted, OpenAI-compatible chat completions API) implementation of the LLMProvider
-contract (llm_adapter.py).
+Groq (hosted, OpenAI-compatible chat completions API): MarketingIQ's only LLM provider,
+behind the LLMProvider contract (llm_adapter.py).
 
-Receives exactly what the Gemini provider receives: the shared GROUNDING_INSTRUCTIONS as the
-system prompt and the question plus compact analysis rendered by build_user_prompt().
+The system prompt is GROUNDING_INSTRUCTIONS; the user message is the question plus the typed
+compact analysis rendered by build_user_prompt(). Every answer then goes through the adapter's
+grounding validator.
 
 Retry / timeout ownership for Groq: every attempt is bounded by the adapter's deadline.
 Transient 5xx / network errors get one more attempt if enough of the deadline is left.
@@ -24,8 +25,10 @@ from llm_adapter import (GROUNDING_INSTRUCTIONS, LLMProvider, LLMProviderError, 
 logger = logging.getLogger("marketingiq.llm_adapter")  # shares the adapter's handler
 
 DEFAULT_GROQ_BASE_URL = "https://api.groq.com/openai/v1"
-# Production model (not preview) on Groq: fast, small, strong instruction following, 131k context.
-DEFAULT_GROQ_MODEL = "openai/gpt-oss-20b"
+# Production model (not preview) on Groq, 131k context. Chosen over openai/gpt-oss-20b for its
+# better grounding accuracy in the provider benchmark (benchmark_results/); on the free plan both
+# have the same rate limits. Override with GROQ_MODEL.
+DEFAULT_GROQ_MODEL = "openai/gpt-oss-120b"
 CONNECT_TIMEOUT_S = 5.0
 MAX_ATTEMPTS = 2
 MIN_ATTEMPT_S = 1.0
@@ -110,10 +113,9 @@ class GroqProvider(LLMProvider):
             limits = {h: response.headers[h] for h in RATE_LIMIT_HEADERS if h in response.headers}
             logger.warning(json.dumps({"event": "groq_rate_limited", "model": self.model, **limits}))
             raise ProviderRateLimitError("groq HTTP 429")
-        if status == 404:
-            e = ProviderNotConfiguredError(f"groq model {self.model} not found")
-            e.public_message = f"The AI model '{self.model}' isn't available on Groq. Check GROQ_MODEL."
-            raise e
+        if status == 404:  # users see the generic "unavailable" message; the log names the model
+            logger.warning(json.dumps({"event": "groq_model_not_found", "model": self.model}))
+            raise ProviderNotConfiguredError(f"groq model {self.model} not found")
         if status != 200:
             logger.warning("groq client error %s: %s", status, response.text[:300])
             raise LLMProviderError(f"groq HTTP {status}")

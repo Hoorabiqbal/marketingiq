@@ -1,10 +1,9 @@
 """
-Tests for the LLM Adapter (llm_adapter.py), the Gemini provider (gemini_provider.py)
-and their integration with the Query Router's LLM_REQUIRED route.
+Tests for the LLM Adapter (llm_adapter.py) and its integration with the Query Router's
+LLM_REQUIRED route, through the real GroqProvider on a fake transport (fake_groq.py).
 
-No real Gemini call is ever made: google-genai's Models.generate_content is patched
-for the whole module to fail loudly, and each test overrides it with a mock built
-from the real SDK's own response types (same approach as test_app.py).
+No real Groq call is ever made: the app's provider is blocked for the whole module, and each
+test that needs an answer supplies its own fake.
 
 Run:  python test_llm_adapter.py      (or: pytest test_llm_adapter.py)
 """
@@ -13,55 +12,29 @@ import logging
 import os
 from unittest.mock import MagicMock, patch
 
-os.environ.setdefault("GEMINI_API_KEY", "test-placeholder-not-real")
+import fake_groq  # noqa: F401  (first: fake GROQ_API_KEY before main.py reads .env)
 
 import httpx
 from fastapi.testclient import TestClient
-from google.genai import errors as ge
-from google.genai import models as genai_models
-from google.genai import types
 
 import grounding
 import main
 import query_router as qr
-from gemini_provider import GeminiProvider
-from gemini_rotator import GeminiKeyRotator
-from llm_adapter import GROUNDING_INSTRUCTIONS, LLMAdapter, LLMProvider
+from llm_adapter import BUSY_MESSAGE, GROUNDING_INSTRUCTIONS, LLMAdapter, LLMProvider, ProviderSlots
 
-# Safety net: any Gemini call a test forgot to mock fails instead of spending quota.
-_guard = patch.object(genai_models.Models, "generate_content",
-                      side_effect=AssertionError("real Gemini call attempted in a test"))
-_guard.start()
-
+GUARD = fake_groq.block_real_calls(main.llm_adapter)  # nothing below reaches api.groq.com
 client = TestClient(main.app)
 WHY_Q = "Why is TikTok performing better?"
-SECRET_KEY = "fake-key-SECRET123"
+SECRET_KEY = "gsk_SECRET123_fake"
 
 
-def text_response(text):
-    candidate = types.Candidate(content=types.Content(role="model", parts=[types.Part(text=text)]))
-    return types.GenerateContentResponse(candidates=[candidate])
+def groq_adapter(respond=fake_groq.reply("ok"), api_key=fake_groq.FAKE_KEY, timeout_s=10.0):
+    provider, fake = fake_groq.provider(respond, api_key=api_key)
+    return LLMAdapter(provider, timeout_s=timeout_s), fake
 
 
-def api_error(cls, code, msg):
-    return cls(code=code, response_json={"error": {"message": msg}})
-
-
-def mock_gemini(**kwargs):
-    return patch.object(genai_models.Models, "generate_content", **kwargs)
-
-
-def gemini_adapter(keys=(SECRET_KEY,), timeout_s=10.0):
-    provider = GeminiProvider(GeminiKeyRotator(list(keys)), "test-model", sleep=lambda s: None)
-    return LLMAdapter(provider, timeout_s=timeout_s)
-
-
-def sent_prompt(mock_gen) -> str:
-    return mock_gen.call_args.kwargs["contents"][0].parts[0].text
-
-
-def sent_analysis(mock_gen) -> dict:
-    return json.loads(sent_prompt(mock_gen).split("ANALYSIS (JSON):\n", 1)[1])
+def sent_analysis(fake) -> dict:
+    return json.loads(fake.user_prompt().split("ANALYSIS (JSON):\n", 1)[1])
 
 
 class RecordingProvider(LLMProvider):
@@ -95,26 +68,25 @@ def test_provider_interface_accepts_question_and_analysis():
         pass
 
 
-# 2 & 3. Gemini gets the compact analysis, never the dataset ---------------
+# 2 & 3. Groq gets the compact analysis, never the dataset ------------------
 
-def test_gemini_receives_compact_router_analysis():
-    with mock_gemini(return_value=text_response("TikTok leads on ROAS.")) as gen:
-        r = qr.route_query(WHY_Q, {"budget": "High"}, explainer=gemini_adapter())
-    assert gen.call_count == 1  # one LLM call per request
-    sent = sent_analysis(gen)
+def test_groq_receives_compact_router_analysis():
+    adapter, fake = groq_adapter(fake_groq.reply("TikTok leads on ROAS."))
+    r = qr.route_query(WHY_Q, {"budget": "High"}, explainer=adapter)
+    assert len(fake.requests) == 1  # one LLM call per request
+    sent = sent_analysis(fake)
     expected = grounding.build_llm_context(WHY_Q, {"filters_applied": {"budget": "High"},
                                                    "focus_metrics": r["focus_metrics"], "results": r["analysis"]})
     assert sent == json.loads(json.dumps(expected))  # the router's analysis, typed — nothing else
     assert sent["active_filters"] == {"budget_tier": "High"} and sent["population"] == "dashboard-filtered view"
-    config = gen.call_args.kwargs["config"]
-    assert config.system_instruction == GROUNDING_INSTRUCTIONS
-    assert sent_prompt(gen).startswith(f"QUESTION:\n{WHY_Q}")
+    assert fake.body()["messages"][0] == {"role": "system", "content": GROUNDING_INSTRUCTIONS}
+    assert fake.user_prompt().startswith(f"QUESTION:\n{WHY_Q}")
 
 
 def test_full_dataset_is_never_sent():
-    with mock_gemini(return_value=text_response("ok")) as gen:
-        r = qr.route_query("Why do campaigns with spend over 100 perform differently?", explainer=gemini_adapter())
-    prompt = sent_prompt(gen)
+    adapter, fake = groq_adapter()
+    r = qr.route_query("Why do campaigns with spend over 100 perform differently?", explainer=adapter)
+    prompt = fake.user_prompt()
     fc = next(a for a in r["analysis"] if a["tool"] == "filter_campaigns")
     assert fc["result"]["matched_count"] > 1000
     assert prompt.count('"id":') <= qr.MAX_LLM_CAMPAIGN_ROWS
@@ -133,73 +105,78 @@ def test_full_dataset_is_never_sent():
 # 4. Success -------------------------------------------------------------------
 
 def test_success_through_endpoint():
-    with mock_gemini(return_value=text_response("What the data shows: TikTok has the highest ROAS.")) as gen:
+    fake = fake_groq.install(main.llm_adapter, fake_groq.reply("What the data shows: TikTok has the highest ROAS."))
+    try:
         r = client.post("/api/query", json={"query": WHY_Q})
+    finally:
+        fake_groq.block_real_calls(main.llm_adapter)
     body = r.json()
-    assert r.status_code == 200 and body["route"] == "LLM_REQUIRED" and gen.call_count == 1
+    assert r.status_code == 200 and body["route"] == "LLM_REQUIRED" and len(fake.requests) == 1
     assert body["explanation"].startswith("What the data shows")
-    assert body["llm"]["status"] == "ok" and body["llm"]["provider"] == "gemini"
+    assert body["llm"]["status"] == "ok" and body["llm"]["provider"] == "groq"
     assert body["llm"]["analysis_bytes"] > 0 and body["analysis"]
 
 
 # 5–8. Failures become structured results, never crashes ---------------------
 
-def _llm_failure(side_effect, adapter=None):
-    with mock_gemini(side_effect=side_effect) as gen:
-        r = qr.route_query(WHY_Q, explainer=adapter or gemini_adapter())
+def _llm_failure(respond, **kw):
+    adapter, fake = groq_adapter(respond, **kw)
+    r = qr.route_query(WHY_Q, explainer=adapter)
     assert r["route"] == "LLM_REQUIRED" and r["analysis"] and r["explanation"] is None
     assert r["llm"]["status"] == "error" and r["llm"]["message"]
-    return r["llm"], gen
+    return r["llm"], fake
 
 
-def test_gemini_api_error():
-    llm, _ = _llm_failure(api_error(ge.ClientError, 400, "Invalid argument"))
-    assert llm["error"] == "provider_error"
+def test_provider_api_error():
+    llm, fake = _llm_failure(lambda req: httpx.Response(400, json={"error": {"message": "Invalid argument"}}))
+    assert llm["error"] == "provider_error" and len(fake.requests) == 1
 
 
 def test_server_error_retries_then_fails_cleanly():
-    err = api_error(ge.ServerError, 503, "overloaded")
-    llm, gen = _llm_failure([err, err, err])
-    assert llm["error"] == "unavailable" and gen.call_count == 3
-    with mock_gemini(side_effect=[err, text_response("recovered")]) as gen:
-        r = qr.route_query(WHY_Q, explainer=gemini_adapter())
-    assert r["explanation"] == "recovered" and gen.call_count == 2
+    llm, fake = _llm_failure(lambda req: httpx.Response(503, text="overloaded"))
+    assert llm["error"] == "unavailable" and len(fake.requests) == 2  # bounded: one retry
+    responses = iter([httpx.Response(503, text="overloaded"), httpx.Response(200, json=fake_groq.completion("recovered"))])
+    adapter, fake = groq_adapter(lambda req: next(responses))
+    r = qr.route_query(WHY_Q, explainer=adapter)
+    assert r["explanation"] == "recovered" and len(fake.requests) == 2
 
 
 def test_rate_limit():
-    quota = api_error(ge.ClientError, 429, "RESOURCE_EXHAUSTED: quota")
-    llm, gen = _llm_failure(quota, gemini_adapter(keys=("k1", "k2")))
-    assert llm["error"] == "rate_limited" and gen.call_count == 2  # existing rotator tried both keys
+    llm, fake = _llm_failure(lambda req: httpx.Response(429, json={"error": {"message": "Rate limit reached"}}))
+    assert llm["error"] == "rate_limited" and len(fake.requests) == 1  # never retried
 
 
 def test_timeout():
-    llm, _ = _llm_failure(httpx.ReadTimeout("timed out"))
+    def slow(req):
+        raise httpx.ReadTimeout("timed out")
+    llm, _ = _llm_failure(slow)
     assert llm["error"] == "timeout"
     # The per-request HTTP timeout is set from the adapter's deadline.
-    with mock_gemini(return_value=text_response("ok")) as gen:
-        qr.route_query(WHY_Q, explainer=gemini_adapter(timeout_s=12))
-    assert 0 < gen.call_args.kwargs["config"].http_options.timeout <= 12_000
-    # A deadline too short to start an attempt never calls Gemini at all.
-    llm, gen = _llm_failure(AssertionError("must not be called"), gemini_adapter(timeout_s=0.1))
-    assert llm["error"] == "timeout" and gen.call_count == 0
+    adapter, fake = groq_adapter(timeout_s=12)
+    qr.route_query(WHY_Q, explainer=adapter)
+    assert 0 < fake.requests[0].extensions["timeout"]["read"] <= 12
+    # A deadline too short to start an attempt never calls Groq at all.
+    llm, fake = _llm_failure(fake_groq.reply("must not be used"), timeout_s=0.1)
+    assert llm["error"] == "timeout" and len(fake.requests) == 0
 
 
 def test_missing_api_key():
-    llm, gen = _llm_failure(AssertionError("must not be called"), gemini_adapter(keys=()))
-    assert llm["error"] == "not_configured" and gen.call_count == 0
-    with patch.object(main.rotator, "clients", []):
+    llm, fake = _llm_failure(fake_groq.reply("must not be used"), api_key=None)
+    assert llm["error"] == "not_configured" and len(fake.requests) == 0
+    with patch.object(main.llm_adapter.provider, "_api_key", ""):
         body = client.post("/api/query", json={"query": WHY_Q}).json()
     assert body["llm"]["error"] == "not_configured" and body["analysis"]
 
 
 def test_malformed_and_unexpected_provider_responses():
-    empty = types.GenerateContentResponse(candidates=[])
-    with mock_gemini(return_value=empty):
-        r = qr.route_query(WHY_Q, explainer=gemini_adapter())
-    assert r["llm"]["error"] == "bad_response"
-    with mock_gemini(return_value=text_response("   ")):
-        assert qr.route_query(WHY_Q, explainer=gemini_adapter())["llm"]["error"] == "bad_response"
-    llm, _ = _llm_failure(RuntimeError("boom"))
+    llm, _ = _llm_failure(lambda req: httpx.Response(200, json={"choices": []}))
+    assert llm["error"] == "bad_response"
+    llm, _ = _llm_failure(fake_groq.reply("   "))
+    assert llm["error"] == "bad_response"
+
+    def bug(req):
+        raise RuntimeError("boom")
+    llm, _ = _llm_failure(bug)
     assert llm["error"] == "provider_error"
     broken_adapter = MagicMock()
     broken_adapter.explain.side_effect = RuntimeError("adapter bug")
@@ -225,12 +202,13 @@ def test_secrets_never_logged_or_returned():
         lg.addHandler(handler)
         lg.setLevel(logging.INFO)
     try:
-        llm, _ = _llm_failure(api_error(ge.ClientError, 401, f"API key not valid: {SECRET_KEY}"))
+        llm, fake = _llm_failure(lambda req: httpx.Response(401, json={"error": {"message": f"Invalid API Key {SECRET_KEY}"}}),
+                                 api_key=SECRET_KEY)
     finally:
         for lg, level in zip(loggers, levels):
             lg.removeHandler(handler)
             lg.setLevel(level)
-    assert llm["error"] == "auth_error"
+    assert llm["error"] == "auth_error" and fake.requests[0].headers["authorization"] == f"Bearer {SECRET_KEY}"
     assert records and not any("SECRET123" in r.getMessage() for r in records)
     assert "SECRET123" not in json.dumps(llm)
 
@@ -243,9 +221,8 @@ def test_direct_queries_do_not_invoke_llm():
         r = qr.route_query(q, explainer=spy)
         assert r["route"] == "DIRECT_DATABASE" and "llm" not in r
     assert spy.explain.call_count == 0
-    with mock_gemini(side_effect=AssertionError("LLM must not be called")) as gen:
-        assert client.post("/api/query", json={"query": "What is total spend?"}).status_code == 200
-    assert gen.call_count == 0
+    assert client.post("/api/query", json={"query": "What is total spend?"}).status_code == 200
+    assert GUARD.requests == []
 
 
 def test_llm_required_queries_invoke_adapter():
@@ -259,12 +236,13 @@ def test_llm_required_queries_invoke_adapter():
     assert spy.explain.call_count == 3
 
 
+# 11. Concurrency cap -------------------------------------------------------------
+
 def test_provider_slots_cap_waiting_requests_without_queueing():
     """Only `limit` requests wait on the provider at once; the rest get 'busy' at once (no queue, no
     provider call) and still receive the analysis. Slots are released after success and failure."""
     import threading
     from concurrent.futures import ThreadPoolExecutor
-    from llm_adapter import BUSY_MESSAGE, ProviderSlots
 
     release, inside = threading.Event(), threading.Semaphore(0)
 
@@ -303,20 +281,21 @@ def test_provider_slots_cap_waiting_requests_without_queueing():
     assert failing.explain("Why?", SAMPLE)["error"] == "provider_error"  # the slot came back
 
 
-def test_chat_fallback_shares_the_provider_slots():
-    from llm_adapter import BUSY_MESSAGE
-    history = [{"role": "user", "content": "What is total revenue?"}, {"role": "assistant", "content": "It is $1."}]
-    body = {"messages": [*history, {"role": "user", "content": "Why is that?"}], "filters": {}}
+def test_chat_explanations_use_the_app_slots():
+    """When every slot is taken, a chat explanation answers at once with the data and the busy
+    notice, without calling Groq; database questions are unaffected."""
     held = [main.provider_slots._sem.acquire(blocking=False) for _ in range(main.provider_slots.limit)]
     try:
         assert all(held)
-        with patch.object(genai_models.Models, "generate_content",
-                          side_effect=AssertionError("Gemini must not be called while busy")):
-            r = client.post("/api/chat", json=body).json()
+        r = client.post("/api/chat", json={"messages": [{"role": "user", "content": WHY_Q}], "filters": {}}).json()
+        direct = client.post("/api/chat", json={"messages": [{"role": "user", "content": "What is total revenue?"}],
+                                                "filters": {}}).json()
     finally:
         for _ in held:
             main.provider_slots._sem.release()
-    assert r["route"] == "FALLBACK" and "Too many AI explanations" in r["answer"]
+    assert r["route"] == "LLM_REQUIRED" and "Too many AI explanations" in r["answer"]
+    assert r["answer"].startswith("What the data shows:") and GUARD.requests == []
+    assert direct["route"] == "DIRECT_DATABASE"
     assert main.provider_slots.limit == int(os.getenv("LLM_MAX_CONCURRENT", "20"))
 
 

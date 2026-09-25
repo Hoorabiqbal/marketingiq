@@ -479,6 +479,17 @@
   .msg { max-width: 82%; font-size: 12px; line-height: 1.5; padding: 9px 12px; border-radius: 10px; }
   .msg.user { align-self: flex-end; background: linear-gradient(135deg, rgba(91,110,245,.24), rgba(155,107,245,.14)); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); border: 1px solid rgba(91,110,245,.32); }
   .msg.ai { align-self: flex-start; background: var(--glass-2-bg); -webkit-backdrop-filter: blur(var(--glass-blur-2)); backdrop-filter: blur(var(--glass-blur-2)); border: 1px solid var(--glass-2-border); box-shadow: var(--shadow-glass-1); }
+  .msg.ai.has-chart { max-width: 100%; width: 100%; box-sizing: border-box; }
+  .chat-chart { margin-top: 8px; min-width: 0; }
+  .chat-chart-title { font-family: 'Manrope', sans-serif; font-weight: 600; font-size: 12px; margin-bottom: 6px; }
+  .chat-chart-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 10.5px; color: var(--text-muted); margin-bottom: 4px; }
+  .chat-chart-legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .chat-chart-legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+  .chat-chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .chat-chart text { fill: var(--text-muted); font-size: 10px; font-family: 'IBM Plex Sans', sans-serif; }
+  .chat-chart .cc-hit { fill: transparent; cursor: crosshair; }
+  .chat-chart .cc-hit:hover { fill: var(--accent); fill-opacity: .07; }
+  .chat-chart .cc-mark:hover { opacity: .8; }
   .chat-input-row { display: flex; gap: 8px; margin-top: 8px; }
   .chat-input { flex: 1; background: var(--glass-2-bg); -webkit-backdrop-filter: blur(var(--glass-blur-2)); backdrop-filter: blur(var(--glass-blur-2)); border: 1px solid var(--glass-2-border); color: var(--text-primary); border-radius: 8px; padding: 8px 11px; font-size: 12px; box-shadow: var(--shadow-glass-1); }
   .chat-send { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: white; border: none; border-radius: 8px; padding: 8px 16px; font-size: 12px; font-weight: 500; cursor: pointer; box-shadow: 0 6px 18px rgba(91,110,245,.28); }
@@ -1292,7 +1303,11 @@ async function sendChat(){
     if(!res.ok) throw new Error('Backend returned status '+res.status);
     const data = await res.json();
     const answer = data.answer || 'The AI Analyst did not return an answer for that question.';
-    document.getElementById(thinkingId).outerHTML = `<div class="msg ai">${answer}</div>`;
+    const msg = document.createElement('div');
+    msg.className = 'msg ai';
+    msg.innerHTML = answer; // server-escaped HTML, as before
+    if (data.chart) appendChatChart(msg, data.chart);
+    document.getElementById(thinkingId).replaceWith(msg);
     chatHistory.push({role:'assistant', content: answer});
   }catch(err){
     document.getElementById(thinkingId).outerHTML = `<div class="msg ai" style="color:var(--negative);">Couldn't reach the AI Analyst backend (${escapeHtml(err.message)}). Make sure the FastAPI server is running — see backend/README.md.</div>`;
@@ -1303,6 +1318,162 @@ async function sendChat(){
 
 function escapeHtml(s){
   const d=document.createElement('div'); d.textContent=s; return d.innerHTML;
+}
+
+/* ============ AI ANALYST CHARTS ============ */
+// Draws a server-validated chart spec ({type, title, x_key, x_label, series, data}; see
+// backend/chart_builder.py) as SVG. The spec is data only: every label goes in via textContent,
+// every number is checked finite, and nothing from it is ever evaluated or inserted as HTML.
+const CC_COLORS = ['#5B6EF5','#34D399','#E0A93E','#9B6BF5','#F0665E','#38BDF8','#F472B6','#A3E635','#FB923C','#94A3B8'];
+const CC_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+function ccEl(tag, attrs, text){
+  const el = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs || {})) el.setAttribute(k, v);
+  if (text != null) el.textContent = text;
+  return el;
+}
+function ccFmt(v, unit, compact){
+  const abs = Math.abs(v);
+  const short = n => abs >= 1e9 ? (n/1e9).toFixed(1)+'B' : abs >= 1e6 ? (n/1e6).toFixed(1)+'M' : abs >= 1e3 ? (n/1e3).toFixed(1)+'K' : n.toFixed(abs < 10 && abs % 1 ? 2 : 0);
+  if (unit === '$') return (v < 0 ? '-$' : '$') + (compact ? short(abs) : abs.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}));
+  if (unit === 'x') return v.toFixed(2) + 'x';
+  if (unit === '%') return v.toFixed(2) + '%';
+  return compact ? short(v) : Math.round(v).toLocaleString();
+}
+function ccXLabel(spec, x, long){
+  if (spec.x_key !== 'month') return x;
+  const [y, m] = x.split('-');
+  return CC_MONTHS[+m - 1] + ' ' + (long ? y : y.slice(2));
+}
+function ccTip(target, title, lines){
+  target.addEventListener('mouseenter', e => showTooltip(title, lines.map(escapeHtml).join('<br>'), e.clientX, e.clientY));
+  target.addEventListener('mouseleave', hideTooltip);
+}
+function ccTicks(lo, hi){
+  if (lo === hi) { hi = lo + 1; }
+  const step0 = (hi - lo) / 4, mag = Math.pow(10, Math.floor(Math.log10(step0)));
+  const step = [1, 2, 2.5, 5, 10].map(s => s * mag).find(s => s >= step0);
+  const ticks = [];
+  for (let t = Math.floor(lo / step) * step; t <= hi + step * 1e-9; t += step) ticks.push(+t.toFixed(10));
+  if (ticks[ticks.length - 1] < hi) ticks.push(ticks[ticks.length - 1] + step);
+  return ticks;
+}
+function ccValid(spec){
+  if (!spec || !['line','bar','pie'].includes(spec.type) || !Array.isArray(spec.series) || !Array.isArray(spec.data)) return false;
+  if (!spec.series.length || !spec.data.length || spec.series.length > 3 || spec.data.length > 120) return false;
+  return spec.data.every(row => typeof row[spec.x_key] === 'string'
+    && spec.series.every(s => typeof row[s.key] === 'number' && isFinite(row[s.key])));
+}
+
+function ccCartesian(svg, spec, W){
+  const H = 250, top = 10, right = 12;
+  const vals = spec.data.flatMap(r => spec.series.map(s => r[s.key]));
+  const ticks = ccTicks(Math.min(0, ...vals), Math.max(0, ...vals));
+  const lo = ticks[0], hi = ticks[ticks.length - 1], unit = spec.series[0].unit;
+  const left = 12 + Math.max(...ticks.map(t => ccFmt(t, unit, true).length)) * 6;
+  const bottom = 26, plotH = H - top - bottom, plotW = W - left - right;
+  const y = v => top + plotH - (v - lo) / (hi - lo) * plotH;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  ticks.forEach(t => {
+    svg.appendChild(ccEl('line', {x1:left, x2:W-right, y1:y(t), y2:y(t), stroke:'var(--chart-grid)', 'stroke-dasharray': t === 0 ? '' : '3 4'}));
+    svg.appendChild(ccEl('text', {x:left-6, y:y(t)+3, 'text-anchor':'end'}, ccFmt(t, unit, true)));
+  });
+  const n = spec.data.length, band = plotW / n;
+  const cx = i => spec.type === 'line' ? left + (n === 1 ? plotW / 2 : i * plotW / (n - 1)) : left + band * (i + .5);
+  const every = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(plotW / 58))));
+  spec.data.forEach((r, i) => {
+    if (i % every === 0) {
+      const raw = ccXLabel(spec, r[spec.x_key]);
+      svg.appendChild(ccEl('text', {x:cx(i), y:H-8, 'text-anchor':'middle'}, raw.length > 12 ? raw.slice(0, 11) + '…' : raw));
+    }
+  });
+  if (spec.type === 'line') {
+    spec.series.forEach((s, k) => {
+      const pts = spec.data.map((r, i) => `${cx(i).toFixed(1)},${y(r[s.key]).toFixed(1)}`).join(' ');
+      svg.appendChild(ccEl('polyline', {points:pts, fill:'none', stroke:CC_COLORS[k], 'stroke-width':2, 'stroke-linejoin':'round'}));
+      spec.data.forEach((r, i) => svg.appendChild(ccEl('circle', {cx:cx(i), cy:y(r[s.key]), r:n > 40 ? 1.5 : 2.6, fill:CC_COLORS[k]})));
+    });
+  } else {
+    const bw = Math.max(2, band * .72 / spec.series.length);
+    spec.data.forEach((r, i) => spec.series.forEach((s, k) => {
+      const v = r[s.key], x = cx(i) - bw * spec.series.length / 2 + k * bw;
+      svg.appendChild(ccEl('rect', {class:'cc-mark', x, y:Math.min(y(v), y(0)), width:bw - 1, height:Math.max(1, Math.abs(y(v) - y(0))), rx:2, fill:CC_COLORS[k]}));
+    }));
+  }
+  spec.data.forEach((r, i) => {  // one hover band per x value, listing every series
+    const w = spec.type === 'line' ? (n === 1 ? plotW : plotW / (n - 1)) : band;
+    const hit = ccEl('rect', {class:'cc-hit', x:cx(i) - w / 2, y:top, width:w, height:plotH});
+    ccTip(hit, ccXLabel(spec, r[spec.x_key], true), spec.series.map(s => `${s.label}: ${ccFmt(r[s.key], s.unit)}`));
+    svg.appendChild(hit);
+  });
+}
+
+function ccHorizontalBars(svg, spec, W){
+  const s = spec.series[0], row = 24, top = 4, H = top + spec.data.length * row + 4;
+  const vals = spec.data.map(r => r[s.key]), lo = Math.min(0, ...vals), hi = Math.max(0, ...vals) || 1;
+  const labelW = Math.min(W * .34, 12 + Math.max(...spec.data.map(r => Math.min(r[spec.x_key].length, 22))) * 6.2);
+  const valueW = 12 + Math.max(...vals.map(v => ccFmt(v, s.unit, true).length)) * 6.2;
+  const plotW = Math.max(40, W - labelW - valueW), x = v => labelW + (v - lo) / (hi - lo) * plotW;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  spec.data.forEach((r, i) => {
+    const v = r[s.key], yy = top + i * row, label = r[spec.x_key];
+    svg.appendChild(ccEl('text', {x:labelW - 8, y:yy + 15, 'text-anchor':'end'}, label.length > 22 ? label.slice(0, 21) + '…' : label));
+    svg.appendChild(ccEl('rect', {class:'cc-mark', x:Math.min(x(v), x(0)), y:yy + 4, width:Math.max(1, Math.abs(x(v) - x(0))), height:row - 8, rx:3, fill:v < 0 ? 'var(--negative)' : CC_COLORS[0]}));
+    svg.appendChild(ccEl('text', {x:Math.max(x(v), x(0)) + 6, y:yy + 15}, ccFmt(v, s.unit, true)));
+    const hit = ccEl('rect', {class:'cc-hit', x:0, y:yy, width:W, height:row});
+    ccTip(hit, label, [`${s.label}: ${ccFmt(v, s.unit)}`]);
+    svg.appendChild(hit);
+  });
+}
+
+function ccPie(svg, spec, W, legend){
+  const s = spec.series[0], H = 230, R = 96, cx = W / 2, cy = H / 2;
+  const total = spec.data.reduce((a, r) => a + r[s.key], 0);
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  let angle = -Math.PI / 2;
+  spec.data.forEach((r, i) => {
+    const v = r[s.key], share = v / total, a2 = angle + share * 2 * Math.PI, color = CC_COLORS[i % CC_COLORS.length];
+    const p = (a, rad) => `${(cx + rad * Math.cos(a)).toFixed(2)},${(cy + rad * Math.sin(a)).toFixed(2)}`;
+    const d = share >= .9999 ? `M ${cx - R},${cy} a ${R},${R} 0 1,0 ${2 * R},0 a ${R},${R} 0 1,0 ${-2 * R},0`
+      : `M ${cx},${cy} L ${p(angle, R)} A ${R},${R} 0 ${share > .5 ? 1 : 0},1 ${p(a2, R)} Z`;
+    const slice = ccEl('path', {class:'cc-mark', d, fill:color, stroke:'var(--bg-surface)', 'stroke-width':1.5});
+    const pct = (share * 100).toFixed(1) + '%';
+    ccTip(slice, r[spec.x_key], [`${s.label}: ${ccFmt(v, s.unit)}`, `Share: ${pct}`]);
+    svg.appendChild(slice);
+    const item = document.createElement('span'), dot = document.createElement('i');
+    dot.style.background = color; item.appendChild(dot); item.appendChild(document.createTextNode(`${r[spec.x_key]} ${pct}`));
+    legend.appendChild(item);
+    angle = a2;
+  });
+}
+
+function appendChatChart(msg, spec){
+  if (!ccValid(spec)) return;
+  const wrap = document.createElement('div'); wrap.className = 'chat-chart';
+  const title = document.createElement('div'); title.className = 'chat-chart-title'; title.textContent = spec.title;
+  const legend = document.createElement('div'); legend.className = 'chat-chart-legend';
+  const svg = ccEl('svg', {role:'img', 'aria-label': spec.title});
+  wrap.append(title, legend, svg);
+  msg.classList.add('has-chart');
+  msg.appendChild(wrap);
+  if (spec.type !== 'pie' && spec.series.length > 1) spec.series.forEach((s, k) => {
+    const item = document.createElement('span'), dot = document.createElement('i');
+    dot.style.background = CC_COLORS[k]; item.appendChild(dot); item.appendChild(document.createTextNode(s.label));
+    legend.appendChild(item);
+  });
+  let lastW = 0;
+  const draw = () => {  // redrawn at the bubble's real width so text stays readable on phones
+    const W = Math.max(260, Math.round(wrap.clientWidth || 520));
+    if (W === lastW) return;
+    lastW = W; svg.replaceChildren();
+    if (spec.type === 'pie') { legend.replaceChildren(); ccPie(svg, spec, W, legend); }
+    else if (spec.type === 'bar' && spec.x_key !== 'month') ccHorizontalBars(svg, spec, W);
+    else ccCartesian(svg, spec, W);
+  };
+  requestAnimationFrame(draw);
+  if (window.ResizeObserver) new ResizeObserver(draw).observe(wrap);
 }
 
 /* ============ THEME SWITCHER ============ */

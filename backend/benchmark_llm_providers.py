@@ -1,13 +1,13 @@
 """
-Benchmark LLM providers on the LLM_REQUIRED path with identical inputs.
+Benchmark Groq models on the LLM_REQUIRED path with identical inputs (needs GROQ_API_KEY).
 
-    python benchmark_llm_providers.py --providers gemini,groq --out results.json   (groq needs GROQ_API_KEY)
+    python benchmark_llm_providers.py --models openai/gpt-oss-120b,openai/gpt-oss-20b --out results.json
 
 For each question: the Query Router classifies it (must be LLM_REQUIRED) and builds the
-compact analysis from the DuckDB data layer ONCE; that exact block goes to every provider
-through the LLM Adapter. Nothing else is sent. One call per question per provider (Gemini
-and Groq keep their normal bounded 5xx retry), so a full run costs ~len(QUESTIONS) requests
-per hosted provider. Rate-limit (429) answers are recorded, never retried or worked around.
+compact analysis from the DuckDB data layer ONCE; that exact block goes to every model
+through the LLM Adapter. Nothing else is sent. One call per question per model (with Groq's
+normal bounded 5xx retry), so a full run costs ~len(QUESTIONS) requests per model.
+Rate-limit (429) answers are recorded, never retried or worked around.
 
 Recorded per answer: latency (local analysis vs provider), success, length, and a numeric
 grounding check: every number in the answer is matched against the numbers present in the
@@ -16,7 +16,7 @@ with no match are listed as `unsupported` for manual review — they may be inve
 derived (e.g. a difference the model computed). System RAM is recorded before and after
 each provider's run.
 
-Past results (including the removed local Qwen provider) are in benchmark_results/.
+Past results (including the removed Gemini and local Qwen providers) are in benchmark_results/.
 """
 import argparse
 import hashlib
@@ -119,16 +119,16 @@ def system_mem():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--providers", default="gemini,groq")
+    ap.add_argument("--models", default="openai/gpt-oss-120b")
     ap.add_argument("--out", default="llm_benchmark_results.json")
-    ap.add_argument("--gemini-pause", type=float, default=3.0, help="seconds between Gemini calls (free-tier RPM)")
-    ap.add_argument("--groq-pause", type=float, default=3.0, help="seconds between Groq calls (free-tier RPM/TPM)")
+    ap.add_argument("--pause", type=float, default=15.0, help="seconds between calls (free plan: 8K tokens/min)")
     args = ap.parse_args()
 
+    from dotenv import load_dotenv
+    load_dotenv(HERE / ".env")  # GROQ_API_KEY, like the app
     import data_tools as dt
     import llm_providers
     import query_router as qr
-    from gemini_rotator import GeminiKeyRotator, load_keys
     from llm_adapter import LLMAdapter, serialize_analysis
     for name in ("marketingiq.query_router", "marketingiq.data"):
         logging.getLogger(name).setLevel(logging.WARNING)
@@ -161,15 +161,13 @@ def main():
     results = {"questions": [{k: c[k] for k in ("question", "tools", "local_analysis_ms", "analysis_bytes", "analysis_sha256")}
                              for c in cases],
                "providers": {}}
-    rotator = GeminiKeyRotator(load_keys())
-
-    for name in [p.strip() for p in args.providers.split(",") if p.strip()]:
-        provider = llm_providers.build_provider(name, rotator, "gemini-3.6-flash")
-        adapter = LLMAdapter(provider, timeout_s=llm_providers.timeout_seconds(name))
+    for name in [m.strip() for m in args.models.split(",") if m.strip()]:
+        provider = llm_providers.build_provider({**os.environ, "GROQ_MODEL": name})
+        adapter = LLMAdapter(provider, timeout_s=llm_providers.timeout_seconds())
         run = {"model": provider.model, "system_before": system_mem(), "answers": []}
         for i, c in enumerate(cases):
-            if name in ("gemini", "groq") and i:
-                time.sleep(args.gemini_pause if name == "gemini" else args.groq_pause)
+            if i:
+                time.sleep(args.pause)
             provider_logs.clear()
             t = time.perf_counter()
             out = adapter.explain(c["question"], c["llm_input"])

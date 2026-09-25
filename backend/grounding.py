@@ -2,7 +2,7 @@
 MarketingIQ grounding layer: the boundary between the analytics engine and any LLM provider.
 
     router analysis (raw data_tools results)
-        -> build_llm_context()      typed, unit-aware, compact context  -> provider (Gemini / Groq)
+        -> build_llm_context()      typed, unit-aware, compact context  -> provider (Groq)
     provider text
         -> validate_explanation()   deterministic check of every number in the answer
         -> safe_summary()           deterministic answer used when the check fails
@@ -299,6 +299,7 @@ NUM_RE = re.compile(
 )
 SCALES = {"k": 1e3, "thousand": 1e3, "m": 1e6, "million": 1e6, "mn": 1e6, "b": 1e9, "billion": 1e9, "bn": 1e9}
 YEAR_WORD_RE = re.compile(r"\b(20\d{2})\b")
+HYPHENS = {c: "-" for c in (0x2010, 0x2011, 0x2012, 0x2013, 0x2212)}  # ‐ ‑ ‒ – − (validation only)
 ISO_MONTH_RE = re.compile(r"\b(20\d{2})-(0[1-9]|1[0-2])(?:-\d{2})?\b")
 MONTH_NAMES = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
 MONTH_RE = re.compile(r"\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?"
@@ -526,6 +527,174 @@ def _is_structural(text: str, c: Claim, facts: list, markers: set = frozenset())
     return False
 
 
+# "A (5) is higher than B (10)": both numbers are supported, the relation is not. `than` forms may
+# have words between ("lower returns (5.8x) than ..."); above/below stand alone.
+COMPARE_RE = re.compile(r"\b(?P<word>higher|greater|lower|less)\b(?P<mid>(?:[^.;!?\n]|\.(?=\d)){0,60}?)\bthan\b"
+                        r"|\b(?P<bound>above|below)\b", re.IGNORECASE)
+NEGATED_RE = re.compile(r"\b(?:not|n't|no)\s+(?:\w+\s+)?$", re.IGNORECASE)
+# Between two objects of one comparison ("above A (4.99%) and B (5.00%)"): a short gap with
+# "and"/"or"/a comma and no clause words — "..., while ROAS is 11.2x" starts a new statement.
+LIST_GAP_RE = re.compile(r"^[^\d$]{0,30}$")
+LIST_JOIN_RE = re.compile(r"\band\b|\bor\b|,", re.IGNORECASE)
+CLAUSE_WORD_RE = re.compile(r"\b(?:while|whereas|but|with|which|is|are|was|were|has|have|had|its|at|of)\b",
+                            re.IGNORECASE)
+
+
+def _claim_unit(c: Claim, cands: list):
+    if c.unit not in (None, "scaled"):
+        return c.unit
+    units = {f.unit for f in cands if f.unit not in ("any", "name")}
+    return units.pop() if len(units) == 1 else None
+
+
+BOTH_RE = re.compile(r"\bboth\b", re.IGNORECASE)
+ALL_OTHERS_RE = re.compile(r"\b(?:all|every|each)\s+(?:the\s+)?other\b", re.IGNORECASE)
+
+
+def _entity_comparisons(region: str, subjects: list, word: str, up: bool, entity_values: dict) -> list:
+    """The other side is named, not written as a number: "3.44% ... above Google Ads and LinkedIn",
+    "profit ... above all other platforms". Each subject is compared, for its own metric, with
+    each named entity's value in the supplied data. Unresolvable subjects are left alone."""
+    issues = []
+    for c, cands in subjects:
+        metrics = {f.metric for f in cands if f.scope in ("entity", "aggregate")}
+        owners = {f.entity for f in cands if f.scope == "entity"}
+        if len(metrics) != 1 or len(owners) > 1:
+            continue
+        metric, owner = metrics.pop(), next(iter(owners), None)
+        values = entity_values.get(metric, {})
+        if ALL_OTHERS_RE.search(region):
+            targets = [n for n in values if n != owner]
+        else:
+            targets = [n for n in values if n != owner and re.search(_name_re(n), region, re.IGNORECASE)]
+        for name in targets:
+            if (up and not c.value > values[name]) or (not up and not c.value < values[name]):
+                issues.append({"category": "wrong_comparison", "claim": f"{c.text} {word} {name}"})
+    return issues
+
+
+def _comparison_issues(scan: str, resolved: list, facts: list = ()) -> list:
+    """Deterministic check of "X higher/lower/greater/less than Y" and "X above/below Y" when both
+    sides are supported numbers in one sentence, compared as written (unit-aware). The subject is
+    the number between the word and "than", else the latest number before it that isn't itself the
+    object of an earlier comparison in the sentence. A threshold ("spend above $10,000") is not a
+    comparison. Unresolvable units in an explicit "than" comparison are flagged, not guessed."""
+    issues = []
+    entity_values = {}  # metric -> {entity: value}, from the supplied comparison rows
+    for f in facts:
+        if f.scope == "entity" and f.entity and f.metric:
+            entity_values.setdefault(f.metric, {})[f.entity] = f.value
+    sentences = {}
+    for c, cands, _ in resolved:
+        sentences.setdefault(_sentence(scan, c.start), []).append((c, cands))
+    for (ss, se), items in sentences.items():
+        matches = list(COMPARE_RE.finditer(scan, ss, se))
+        consumed = set()
+        for i, m in enumerate(matches):
+            if NEGATED_RE.search(scan[max(ss, m.start() - 15):m.start()]):
+                continue
+            word = (m.group("word") or m.group("bound")).lower()
+            up = word in ("higher", "greater", "above")
+            limit = matches[i + 1].start() if i + 1 < len(matches) else se
+            if m.group("word"):
+                mid = [x for x in items if m.start("mid") <= x[0].start < m.end("mid")]
+                subject = mid[0] if mid else None
+            else:
+                subject = None
+            if subject is None:
+                before = [x for x in items if x[0].start < m.start() and id(x[0]) not in consumed]
+                subject = before[-1] if before else None
+            after = [x for x in items if m.end() <= x[0].start < limit]
+            if subject is None:
+                continue
+            if not after:  # "above Google Ads and LinkedIn", "both above all other platforms"
+                subjects = [subject]
+                if BOTH_RE.search(scan[max(ss, m.start() - 20):m.start()]):
+                    subjects = [x for x in items if x[0].start < m.start()][-2:]
+                issues += _entity_comparisons(scan[m.end():limit], subjects, word, up, entity_values)
+                continue
+            objects = [after[0]]
+            for x in after[1:]:  # "above Google Ads (4.99%) and LinkedIn (5.00%)"
+                gap = scan[objects[-1][0].end:x[0].start]
+                if not (LIST_GAP_RE.match(gap) and LIST_JOIN_RE.search(gap)) or CLAUSE_WORD_RE.search(gap):
+                    break
+                objects.append(x)
+            for obj, ocands in objects:
+                consumed.add(id(obj))
+                if m.group("bound") and any(f.scope in ("condition", "question") for f in ocands):
+                    continue  # a threshold, not a comparison
+                su, ou = _claim_unit(*subject), _claim_unit(obj, ocands)
+                if m.group("bound") and (not su or su != ou):
+                    continue  # "5 of the 10 campaigns ... below 1.0": a bound, not a like-for-like comparison
+                if su and ou and su != ou:
+                    issues.append({"category": "comparison_unresolved", "claim": f"{subject[0].text} {word} {obj.text}"})
+                    continue
+                a, b = subject[0].value, obj.value
+                if (up and not a > b) or (not up and not a < b):
+                    issues.append({"category": "wrong_comparison", "claim": f"{subject[0].text} {word} {obj.text}"})
+    return issues
+
+
+# "TikTok has the highest profit": checked against every supplied row of the entity's comparison
+# section. "most"/"least" need "the" ("most campaigns" can mean a majority); best/worst only where
+# the metric's good direction is fixed. "second highest" / "one of the highest" are not claims of first.
+SUPERLATIVE_RE = re.compile(r"\b(?:(?P<the>the)\s+)?(?P<word>highest|lowest|most|least|best|worst)\s+"
+                            r"(?:(?:overall|total|average)\s+)?(?:" + _LABEL_ALT + r")\b", re.IGNORECASE)
+NOT_FIRST_RE = re.compile(r"\b(?:not|n't|one of|among|second|third|fourth|fifth|next|\d+(?:st|nd|rd|th))"
+                          r"[\s-]*(?:the\s+)?$", re.IGNORECASE)
+# "the highest CPC among the top five platforms": a restricted set, not the supplied rows.
+SCOPED_RE = re.compile(r"\b(?:among|excluding|except|apart from|aside from|other than|besides|outside|within)\b",
+                       re.IGNORECASE)
+HIGHER_IS_BETTER = {"revenue", "profit", "roas", "roi_pct", "ctr", "conversion_rate", "conversions", "clicks",
+                    "impressions"}
+LOWER_IS_BETTER = {"cpa", "cpc"}
+
+
+def _superlative_issues(scan: str, context: dict, clauses: "_Clauses") -> list:
+    """A superlative about one named entity is false when another supplied row of the same
+    comparison beats it. Truncated sections only ever show rows, so a shown row that beats the
+    entity is proof; an unclear entity, metric or direction is left alone."""
+    issues = []
+    groups = [{e["name"]: e for e in s.get("entities", []) if e.get("name")}
+              for s in context.get("sections", []) if s.get("type") == "comparison"]
+    for m in SUPERLATIVE_RE.finditer(scan):
+        word = m.group("word").lower()
+        if word in ("most", "least") and not m.group("the"):
+            continue
+        if NOT_FIRST_RE.search(scan[max(0, m.start() - 20):m.start()]):
+            continue
+        if SCOPED_RE.search(scan[m.end():_sentence(scan, m.start())[1]]):
+            continue
+        label = next(n for n, _ in LABELS if m.group(n))
+        metric = {"campaigns": "campaign_count"}.get(label, label)
+        if metric not in METRICS:
+            continue
+        if word in ("highest", "most"):
+            up = True
+        elif word in ("lowest", "least"):
+            up = False
+        elif metric in HIGHER_IS_BETTER | LOWER_IS_BETTER:
+            up = (word == "best") == (metric in HIGHER_IS_BETTER)
+        else:
+            continue  # "best spend": no fixed direction
+        for rows in groups:
+            values = {n: r[metric] for n, r in rows.items() if _is_num(r.get(metric))}
+            if len(values) < 2:
+                continue
+            named = set()
+            for span in (clauses.at(m.start()), _sentence(scan, m.start())):
+                named = {n for n in values if re.search(_name_re(n), scan[span[0]:span[1]], re.IGNORECASE)}
+                if named:
+                    break
+            if len(named) != 1:
+                continue
+            name = named.pop()
+            best = (max if up else min)(values.values())
+            if values[name] != best:
+                issues.append({"category": "wrong_comparison", "claim": f"{name} {word} {m.group(0).split()[-1]}"})
+    return issues
+
+
 @dataclass
 class ValidationReport:
     passed: bool
@@ -543,9 +712,11 @@ def validate_explanation(text: str, context: dict, question: str = "", facts: li
     facts = facts if facts is not None else collect_facts(context, question)
     years = _years(context, question)
     issues, checked = [], 0
-    # ISO dates/months are checked as dates, then blanked so "2025-01" isn't read as 2025 and 1.
-    scan = text
-    for m in ISO_MONTH_RE.finditer(text):
+    # Validation-only copy: Unicode hyphens (as in "2024‑01") become "-" (same length, so positions
+    # still match `text`). ISO dates/months are checked as dates, then blanked so "2025-01" isn't
+    # read as 2025 and 1.
+    scan = text.translate(HYPHENS)
+    for m in ISO_MONTH_RE.finditer(scan):
         if m.group(1) not in years:
             issues.append({"category": "unsupported_date", "claim": m.group(0)})
         scan = scan[:m.start()] + " " * (m.end() - m.start()) + scan[m.end():]
@@ -628,6 +799,9 @@ def validate_explanation(text: str, context: dict, question: str = "", facts: li
                 mo, yr = next(iter(months))
                 if not any(f.month and int(f.month[5:7]) == mo and (not yr or f.month[:4] == yr) for f in cands):
                     issues.append({"category": "month_mismatch", "claim": c.text})
+
+    issues += _comparison_issues(scan, resolved, facts)
+    issues += _superlative_issues(scan, context, clauses)
 
     causal = 0
     for sentence in re.split(r"(?<=[.!?])\s+|\n+", text):
@@ -712,7 +886,8 @@ def _summary_lines(s: dict, focus: list) -> list:
     return []
 
 
-def safe_summary(context: dict) -> str:
+def safe_summary(context: dict, note: str = WITHHELD_NOTE) -> str:
+    """The supplied figures as plain text, then `note` (why no AI explanation is shown)."""
     focus = context.get("focus_metrics") or []
     lines = ["What the data shows:"]
     for s in context.get("sections", []):
@@ -720,5 +895,5 @@ def safe_summary(context: dict) -> str:
     if context.get("active_filters"):
         lines.append("- These figures reflect the current dashboard filters: "
                      + ", ".join(f"{k.replace('_', ' ')} = {v}" for k, v in context["active_filters"].items()) + ".")
-    lines += ["", WITHHELD_NOTE]
+    lines += ["", note]
     return "\n".join(lines)

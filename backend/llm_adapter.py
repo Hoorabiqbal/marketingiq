@@ -6,13 +6,13 @@ MarketingIQ LLM Adapter — provider-independent explanation layer.
 
 The analytics tools remain the source of numerical truth; the LLM only explains
 results it is handed. An answer containing a number the data doesn't support is
-replaced by a deterministic summary of the data, the same way for every provider. The adapter guarantees what reaches a provider is small,
-plain JSON (never a DataFrame, the CSV or the full campaign table) and turns
-every provider failure into a structured result, so callers never crash
-because an LLM is slow, rate-limited or misconfigured.
+replaced by a deterministic summary of the data. The adapter guarantees what reaches
+the provider is small, plain JSON (never a DataFrame, the CSV or the full campaign
+table) and turns every provider failure into a structured result, so callers never
+crash because the LLM is slow, rate-limited or misconfigured.
 
-Nothing in this module is specific to any vendor. Providers (gemini_provider.py
-today; others later) subclass LLMProvider and raise LLMProviderError subclasses.
+Nothing in this module is specific to a vendor: the provider (groq_provider.py; test
+doubles in the tests) subclasses LLMProvider and raises LLMProviderError subclasses.
 """
 import json
 import logging
@@ -78,40 +78,45 @@ def serialize_analysis(analysis) -> str:
 # Provider contract
 # ---------------------------------------------------------------------------
 
+# User-facing messages never name the vendor or its configuration (logs have the details).
+DATA_STILL_AVAILABLE = "The analytics data is still available; please try the explanation again later."
+UNAVAILABLE_MESSAGE = "The AI explanation service is unavailable right now. " + DATA_STILL_AVAILABLE
+
+
 class LLMProviderError(Exception):
     """Base for provider failures. `code` is machine-readable; `public_message` is user-safe."""
     code = "provider_error"
-    public_message = "The AI explanation service hit an unexpected error."
+    public_message = "The AI explanation service hit an unexpected error. " + DATA_STILL_AVAILABLE
 
 
 class ProviderNotConfiguredError(LLMProviderError):
     code = "not_configured"
-    public_message = "The AI explanation service is not configured (no API key)."
+    public_message = UNAVAILABLE_MESSAGE
 
 
 class ProviderAuthError(LLMProviderError):
     code = "auth_error"
-    public_message = "The AI explanation service rejected its credentials. This is a configuration issue."
+    public_message = UNAVAILABLE_MESSAGE
 
 
 class ProviderRateLimitError(LLMProviderError):
     code = "rate_limited"
-    public_message = "The AI explanation service is at its usage limit right now. Please try again shortly."
+    public_message = "The AI explanation service is temporarily rate-limited. " + DATA_STILL_AVAILABLE
 
 
 class ProviderTimeoutError(LLMProviderError):
     code = "timeout"
-    public_message = "The AI explanation took too long and was cancelled. Please try again."
+    public_message = "The AI explanation took too long and was cancelled. " + DATA_STILL_AVAILABLE
 
 
 class ProviderUnavailableError(LLMProviderError):
     code = "unavailable"
-    public_message = "The AI explanation service is temporarily overloaded. Please try again in a moment."
+    public_message = "The AI explanation service is temporarily overloaded. " + DATA_STILL_AVAILABLE
 
 
 class ProviderResponseError(LLMProviderError):
     code = "bad_response"
-    public_message = "The AI explanation service returned an unusable response."
+    public_message = "The AI explanation service returned an unusable response. " + DATA_STILL_AVAILABLE
 
 
 class LLMProvider(ABC):
@@ -144,8 +149,7 @@ def _is_empty_result(result) -> bool:
     return bool(lists) and not any(lists)
 
 
-BUSY_MESSAGE = ("Too many AI explanations are running right now. The figures are shown without an "
-                "explanation; please try again in a moment.")
+BUSY_MESSAGE = "Too many AI explanations are running right now. " + DATA_STILL_AVAILABLE
 
 
 class ProviderSlots:

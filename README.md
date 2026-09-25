@@ -19,8 +19,9 @@ export), with a genuinely data-grounded AI Analyst on top and a premium glassmor
 
 The backend runs on Render's free tier, which spins down after ~15 minutes of inactivity —
 if the AI Analyst is slow to respond the first time, that's it waking back up (~30–60 seconds),
-not a bug. Occasional "servers overloaded, try again" messages from the AI Analyst reflect
-transient load on Google's free-tier Gemini infrastructure, not an issue with this app.
+not a bug. AI explanations run on a free-tier LLM plan with a small per-minute budget: if
+several "why" questions arrive at once, the AI Analyst shows the figures with a
+"temporarily rate-limited" notice instead of an explanation — database answers are unaffected.
 
 ---
 
@@ -46,9 +47,10 @@ MarketingIQ helps a marketing team answer the questions that actually drive budg
   device, gender, creative format, emotion, placement, or platform) also applies as a live
   cross-filter, combinable with the sidebar filters and removable via a chip UI — similar to
   drill-down filtering in tools like Power BI.
-- **AI Marketing Analyst** — ask open-ended questions in plain English; answers are computed
-  live from the real dataset via tool-use, not templated or hardcoded (see below). Supports
-  automatic fallback across multiple Gemini API keys if one hits its free-tier quota.
+- **AI Marketing Analyst** — ask questions in plain English; every figure is computed live
+  from the real dataset in DuckDB. Factual questions are answered directly from the data
+  with no LLM at all; "why" questions get an LLM explanation that is checked number by number
+  against the data before it is shown (see below).
 - **Glassmorphism design system** — a 3-level frosted-glass surface hierarchy (standard /
   elevated / focused) across both a dark (midnight) and light (pearl) theme, with the
   preference synced between the landing page and dashboard.
@@ -64,11 +66,11 @@ MarketingIQ helps a marketing team answer the questions that actually drive budg
 |---|---|
 | Frontend | HTML, CSS, vanilla JavaScript (no framework) — inline SVG for all charts |
 | Data pipeline | Python, Pandas |
-| AI backend | FastAPI, Google Gemini API (`gemini-3.6-flash`, free tier, multi-key fallback) |
+| AI backend | FastAPI, DuckDB, a deterministic query router, Groq (`openai/gpt-oss-120b`) for explanations only, plus a numerical grounding validator |
 | Data | A 10,000-row synthetic digital-advertising campaign dataset (41 columns) |
 
-No paid services are required to run this project — the Gemini API's free tier requires no
-credit card (see [`backend/README.md`](backend/README.md)).
+No paid services are required to run this project — Groq's free plan is enough (see
+[`backend/README.md`](backend/README.md)).
 
 ## Architecture
 
@@ -85,13 +87,13 @@ site/index.html (landing page) ──► site/dashboard.html (the actual app)
                                      from the real data in data.js
         │
         ▼  (AI Analyst tab only)
-backend/main.py (FastAPI) ── Gemini tool-use loop ── backend/data_tools.py
-        │         │                                   (pandas query layer,
-        │         ▼                                    same CSV, live filters)
-        │   backend/gemini_rotator.py — automatic fallback across multiple
-        │   Gemini API keys if one hits its free-tier quota
+backend/main.py (FastAPI) ── Query Router (deterministic, no LLM)
+        ├── DIRECT_DATABASE ──► DuckDB (same CSV, live filters) ──► exact answer
+        ├── LLM_REQUIRED ─────► DuckDB ──► compact typed analysis ──► Groq
+        │                                   ──► grounding validator ──► safe answer
+        └── UNSUPPORTED / NEEDS_CLARIFICATION ──► what can be asked instead
         ▼
-Grounded, business-analyst-style answer, returned to the chat UI
+Answer returned to the chat UI
 ```
 
 `site/dashboard.html` (charts, filters, tables) is a fully static page — it works with the
@@ -104,27 +106,23 @@ embeds a live, non-interactive preview of the real dashboard.
 This is the part of the brief most prone to hand-waving ("connect an AI"), so here's exactly
 how it avoids hallucination:
 
-1. The user's question, conversation history, and currently active dashboard filters (sidebar
-   *and* chart-click cross-filters) are sent to the backend.
-2. Gemini is given a fixed set of **data tools** (`get_totals`, `rank_dimension`,
-   `compare_entities`, `filter_campaigns`, `percentage_share`, `trend_over_time`, etc.) — it
-   decides which tool(s) to call and with what parameters, based on the actual question. This
-   is real intent interpretation, not a hardcoded list of recognized questions.
-3. The backend executes the chosen tool(s) against the real Pandas dataframe — the same
-   filters the user has active are applied automatically inside every tool call.
-4. The real, computed result is sent back to Gemini as a tool result.
-5. Gemini writes the final answer **using only that tool result** — a system prompt
-   explicitly forbids inventing numbers, and requires an explicit "not available in the
-   dataset" response when a tool returns nothing relevant (e.g. asking about a platform that
-   doesn't exist in the data returns `not_found` plus what IS available, so the AI corrects
-   the user rather than guessing).
-6. Multi-step reasoning is supported — e.g. "underperforming campaigns" first calls
-   `get_numeric_field_stats` to get real percentiles, then uses those as thresholds in
-   `filter_campaigns`, rather than a guessed definition of "underperforming."
-7. If multiple Gemini API keys are configured (`GEMINI_API_KEY_1`, `_2`, `_3`, ...), a quota
-   error on one automatically retries on the next, without rotating on unrelated errors
-   (authentication or malformed-request errors are reported directly instead) — see
-   `backend/gemini_rotator.py`.
+1. The user's question and currently active dashboard filters (sidebar *and* chart-click
+   cross-filters) are sent to the backend.
+2. A deterministic **Query Router** (rules, no LLM) maps the question onto a fixed set of
+   **data tools** (`get_totals`, `rank_dimension`, `compare_entities`, `filter_campaigns`,
+   `trend_over_time`, etc.), run in **DuckDB** with the user's filters applied.
+3. Factual questions ("total revenue", "which platform has the highest ROAS", "monthly
+   revenue") are answered straight from that result — no LLM is involved at all.
+4. "Why / explain" questions get a small, typed analysis (units, scopes, aggregates vs.
+   examples, what the data can and cannot establish) that is sent to **Groq** for a short
+   explanation. The LLM never sees the dataset and never chooses tools.
+5. Every explanation passes a deterministic **grounding validator**: each number must match
+   the supplied data with the right unit, metric, entity and month. An explanation with an
+   invented or mislabelled figure is never shown — the user gets a plain summary of the real
+   figures instead.
+6. Questions the data can't answer (fields that don't exist, judgement calls like
+   "underperforming", relative dates like "last month") get a clear message about what can be
+   asked, rather than a guess.
 
 Adding a new askable dimension or metric is a one-line change in `backend/data_tools.py` —
 not a new question/answer branch.
@@ -161,9 +159,12 @@ marketingiq/
 │   ├── dashboard.html           # the actual analytics app
 │   └── data.js
 ├── backend/                     # only needed for the AI Analyst tab
-│   ├── main.py
-│   ├── data_tools.py
-│   ├── gemini_rotator.py        # multi-key fallback if one Gemini key hits its quota
+│   ├── main.py                  # FastAPI app: /api/chat, /api/query, /api/health
+│   ├── query_router.py          # deterministic question routing (no LLM)
+│   ├── data_tools.py            # analytics tools over the DuckDB data layer
+│   ├── llm_adapter.py           # provider-independent explanation layer
+│   ├── groq_provider.py         # Groq, the only LLM provider
+│   ├── grounding.py             # typed LLM context + numerical-claim validator
 │   ├── requirements.txt
 │   ├── test_app.py
 │   ├── .env.example
@@ -191,7 +192,7 @@ even with the backend running — see Option B for the fix, serving it over a lo
    python build_data.py
    ```
 3. **Set up the AI backend** — see [`backend/README.md`](backend/README.md) for full detail
-   (installing dependencies, getting a free Gemini API key, running the server).
+   (installing dependencies, getting a Groq API key, running the server).
 4. **Serve the frontend** over a local address (not `file://`):
    ```
    cd site
@@ -202,16 +203,16 @@ even with the backend running — see Option B for the fix, serving it over a lo
 
 ## Environment variables
 
-All secrets live in `backend/.env` (never committed — see `.gitignore`). See
-`backend/.env.example` for the exact variable names (single key or multi-key fallback) and
-where to get a free one.
+All secrets live in `backend/.env` (never committed — see `.gitignore`). The only required one
+is `GROQ_API_KEY`; see `backend/.env.example` for the optional settings.
 
 ## Testing
 
-- `backend/test_app.py` — automated tests of the AI tool-use loop and key-rotation logic
-  (filter injection, hallucination guarding, multi-tool chaining, retry-on-overload, key
-  fallback on quota errors, graceful missing-key handling) using mocked Gemini responses
-  built from the real SDK's own types.
+- `backend/test_*.py` — automated tests of the router, the DuckDB data layer (checked
+  against the original Pandas results), the chat endpoint, the Groq provider (rate limits,
+  timeouts, retries, errors), the grounding validator (including real bad answers recorded
+  from earlier LLM benchmarks) and cold-start concurrency. Groq is replaced by a fake HTTP
+  transport, so the suite needs no API key and uses no quota.
 - Frontend behavior (zero-match filters, search edge cases, sort correctness, chart
   cross-filtering, responsive navigation, theme persistence) was verified with an automated
   headless-browser test pass during development — 60+ test cases across multiple suites.
@@ -219,10 +220,11 @@ where to get a free one.
 ## Limitations
 
 - The dataset is synthetic/public, not live production ad-platform data.
-- The AI Analyst's free-tier Gemini access is rate-limited per key (~1,500 requests/day) and
-  can occasionally return a transient "servers overloaded" message under high demand on
-  Google's end — the app retries automatically before showing this to the user, and multiple
-  API keys can be configured for quota fallback.
+- AI explanations use Groq's free plan (about 8,000 tokens a minute, roughly a few
+  explanations per minute for the whole app). Beyond that, users see the figures with a
+  "temporarily rate-limited" notice. Factual questions never use the LLM and are unaffected.
+- The AI Analyst answers each question on its own: follow-ups that depend on an earlier
+  answer ("what about TikTok?") are asked to be rephrased as a full question.
 - Filtering, charts, and the campaign ledger operate on the full 10,000-row dataset, but the
   campaign ledger table displays the top 100 matching rows at a time for performance; the KPI
   totals above it reflect the complete filtered set regardless.

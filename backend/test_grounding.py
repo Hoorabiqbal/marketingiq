@@ -2,9 +2,9 @@
 Tests for the grounding layer (grounding.py): the typed LLM context, the numerical-claim
 validator, the deterministic fallback, and how the LLM Adapter applies them to every provider.
 
-No real provider call is ever made: Gemini's generate_content is patched to fail loudly and
-Groq runs on httpx.MockTransport, so these tests use no quota and need no real key.
-Historical bad answers come from benchmark_results/ (recorded Phase 6-7 provider output).
+No real provider call is ever made: Groq runs on a fake transport (fake_groq.py), so these tests
+use no quota and need no real key. Historical bad answers come from benchmark_results/ (output
+recorded from Gemini, Qwen and Groq in Phases 6-7): the validator is provider-independent.
 
 Run:  python test_grounding.py      (or: pytest test_grounding.py)
 """
@@ -15,29 +15,20 @@ import time
 from pathlib import Path
 from unittest.mock import patch
 
-os.environ.setdefault("GEMINI_API_KEY", "test-placeholder-not-real")
+import fake_groq  # noqa: F401  (first: fake GROQ_API_KEY before main.py reads .env)
+from fake_groq import FAKE_KEY
 
-import httpx
 from fastapi.testclient import TestClient
-from google.genai import models as genai_models
-from google.genai import types
 
 import data_tools as dt
 import grounding
 import main
 import query_router as qr
-from gemini_provider import GeminiProvider
-from gemini_rotator import GeminiKeyRotator
-from groq_provider import GroqProvider
 from llm_adapter import LLMAdapter, LLMProvider
 
-_guard = patch.object(genai_models.Models, "generate_content",
-                      side_effect=AssertionError("real Gemini call attempted in a test"))
-_guard.start()
-
+GUARD = fake_groq.block_real_calls(main.llm_adapter)  # nothing below reaches api.groq.com
 client = TestClient(main.app)
 BENCH = Path(__file__).parent / "benchmark_results"
-FAKE_KEY = "gsk_test_FAKE_not_a_real_key"
 NNBSP = "\u202f"  # narrow no-break space, as Groq writes thousands separators
 
 
@@ -278,6 +269,88 @@ def test_dates_are_checked():
     assert categories("Revenue peaked in 2019.", ctx(TREND_Q), TREND_Q) == ["unsupported_date"]
 
 
+def test_unicode_hyphen_dates():
+    """Groq writes "2024‑01" with U+2011; U+2010 and "-" must validate the same way."""
+    c = ctx(TREND_Q)
+    ts = next(s for s in c["sections"] if s["type"] == "time_series")
+    p = ts["points"][0]
+    for dash in ("-", "‐", "‑"):
+        text = f"Revenue was ${p['value']:,.2f} in {p['month'].replace('-', dash)}."
+        assert check(text, c, TREND_Q).passed, dash
+        assert categories(f"Revenue peaked in 2019{dash}12.", c, TREND_Q) == ["unsupported_date"], dash
+
+
+def test_comparisons_between_supported_numbers():
+    c = ctx(PLATFORM_Q)
+    tiktok, linkedin = entity(c, "TikTok"), entity(c, "LinkedIn")
+    hi, lo = tiktok["roas"], linkedin["roas"]
+    for text in (f"TikTok's ROAS ({hi}x) is higher than LinkedIn's ({lo}x).",
+                 f"LinkedIn's ROAS ({lo}x) is lower than TikTok's ({hi}x).",
+                 f"TikTok's ROAS of {hi}x is above LinkedIn's {lo}x.",
+                 f"TikTok's ROAS ({hi}x) is higher than LinkedIn's ({lo}x), with a CPA of ${tiktok['cpa']}."):
+        assert check(text, c).passed, text
+    for text in (f"LinkedIn's ROAS ({lo}x) is higher than TikTok's ({hi}x).",
+                 f"TikTok's ROAS ({hi}x) is lower than LinkedIn's ({lo}x).",
+                 f"LinkedIn's ROAS of {lo}x is above TikTok's {hi}x."):
+        assert "wrong_comparison" in categories(text, c), text
+    # A threshold is not a comparison.
+    s = next(x for x in FILTER["sections"] if x["type"] == "filtered_subset")
+    assert check(f"The {s['matched_campaign_count']:,} campaigns with spend above $10,000 have a ROAS of "
+                 f"{s['aggregates']['roas']}x, below the overall {TOTALS['roas']}x.", FILTER, FILTER_Q).passed
+
+
+def test_recorded_q1_false_comparison_is_blocked():
+    """Groq gpt-oss-120b, Groq-only quality test Q1: both numbers exist, the relation is false."""
+    text = ("- Conversion rate was **3.439%**, slightly below Facebook (4.26%) and Instagram (4.154%) but above "
+            "Google Ads (4.992%) and LinkedIn (4.995%) when measured as a percentage of clicks.")
+    r = check(text, ctx(PLATFORM_Q), PLATFORM_Q)
+    assert r.categories() == ["wrong_comparison"]
+    assert {i["claim"] for i in r.issues} == {"3.439% above 4.992%", "3.439% above 4.995%"}
+    # The same errors with the other side named instead of written as a number (real Groq
+    # gpt-oss-120b answer from the fix's smoke test): compared with the named entities' values.
+    real = ("- Its profit was **$31,278,715.96**, and ROI was **1018.4%**, both above all other platforms.\n"
+            "- TikTok’s CPA was **$37.6**, lower than Facebook ($41.12), Instagram ($51.42), Twitter ($49.56), "
+            "Google Ads ($80.77) and LinkedIn ($131.11).\n"
+            "- Conversion rate was **3.439%**, slightly below Facebook and Instagram but above Google Ads and LinkedIn.")
+    r = check(real, ctx(PLATFORM_Q), PLATFORM_Q)
+    assert {i["claim"] for i in r.issues} == {"$31,278,715.96 above Facebook", "$31,278,715.96 above Google Ads",
+                                              "3.439% above Google Ads", "3.439% above LinkedIn"}
+    assert check(f"TikTok's ROAS of {entity(ctx(PLATFORM_Q), 'TikTok')['roas']}x is above all other platforms.",
+                 ctx(PLATFORM_Q), PLATFORM_Q).passed
+
+
+def test_superlatives_checked_against_comparison_rows():
+    small = {"sections": [{"type": "comparison", "dimension": "platform", "entity_count": 3, "entities": [
+        {"name": "TikTok", "profit": 10}, {"name": "Google Ads", "profit": 20}, {"name": "LinkedIn", "profit": 15}]}]}
+    assert categories("TikTok has the highest profit.", small) == ["wrong_comparison"]
+    assert check("Google Ads has the highest profit.", small).passed
+    assert check("TikTok has the lowest profit.", small).passed
+    assert categories("LinkedIn has the lowest profit.", small) == ["wrong_comparison"]
+    c = ctx(PLATFORM_Q)
+    for text in ("TikTok has the highest ROAS.", "The highest profit came from Google Ads.",
+                 "TikTok has the lowest CPA.", "TikTok has the best CPA.", "LinkedIn has the worst ROAS.",
+                 "Google Ads had the most profit.", "TikTok has the second-highest profit.",
+                 "TikTok is one of the highest in spend, and has the highest ROAS.", "TikTok has the best spend.",
+                 "Google Ads has the highest CPA among the top five platforms."):
+        assert check(text, c, PLATFORM_Q).passed, text
+    for text in ("Google Ads has the lowest ROAS.", "TikTok has the best conversion rate.",
+                 "TikTok has the worst CPA.", "LinkedIn had the most profit.", "TikTok has the highest spend."):
+        assert categories(text, c, PLATFORM_Q) == ["wrong_comparison"], text
+
+
+def test_recorded_tiktok_highest_profit_is_blocked():
+    """Recorded Groq failure: TikTok's profit described as above all other platforms (Google Ads and
+    Facebook are higher). The equivalent superlative must be blocked too, with or without the figure."""
+    c = ctx(PLATFORM_Q)
+    profit = entity(c, "TikTok")["profit"]
+    for text in ("TikTok has the highest profit of all platforms.",
+                 f"TikTok had the highest profit (${profit:,.2f}).",
+                 f"With ${profit:,.2f}, TikTok delivered the highest profit."):
+        r = check(text, c, PLATFORM_Q)
+        assert r.categories() == ["wrong_comparison"], (text, r.issues)
+        assert {i["claim"] for i in r.issues} == {"TikTok highest profit"}
+
+
 def test_safe_summary_is_itself_grounded():
     questions = [PLATFORM_Q, "Explain the decline in CTR.", TREND_Q, FILTER_Q, OVERALL_Q, DEVICE_Q, FATIGUE_Q, OBJECTIVE_Q]
     for q in questions:
@@ -360,61 +433,45 @@ def test_grounding_log_is_sanitized():
     assert e["provider"] == "canned" and e["passed"] is False and e["action"] == "replaced_with_data_summary"
     assert e["issues"] == [{"category": "unsupported_value", "claim": "$999.99"}]
     blob = json.dumps(e)
-    assert "SECRETQUESTION" not in blob and "SECRETANSWER" not in blob and "GEMINI_API_KEY" not in blob
+    assert "SECRETQUESTION" not in blob and "SECRETANSWER" not in blob and FAKE_KEY not in blob
 
 
 # ---------------------------------------------------------------------------
-# Every provider goes through the validator; DIRECT_DATABASE never does
+# Every Groq answer goes through the validator; DIRECT_DATABASE never does
 # ---------------------------------------------------------------------------
 
-def gemini_reply(text):
-    candidate = types.Candidate(content=types.Content(role="model", parts=[types.Part(text=text)]))
-    return types.GenerateContentResponse(candidates=[candidate])
-
-
-def test_gemini_responses_are_validated():
-    adapter = LLMAdapter(GeminiProvider(GeminiKeyRotator(["k"]), "test-model", sleep=lambda s: None))
-    good = f"What the data shows: overall ROAS is {TOTALS['roas']:.2f}x."
-    with patch.object(genai_models.Models, "generate_content", return_value=gemini_reply(good)) as gen, \
-            patch.object(grounding, "validate_explanation", wraps=grounding.validate_explanation) as spy:
-        r = qr.route_query(OVERALL_Q, {}, explainer=adapter)
-    assert gen.call_count == 1 and spy.call_count == 1 and r["explanation"] == good
-    assert r["llm"]["provider"] == "gemini" and r["llm"]["grounding"]["passed"] is True
-    with patch.object(genai_models.Models, "generate_content", return_value=gemini_reply("ROAS is 6.54%.")) as gen:
-        r = qr.route_query(OVERALL_Q, {}, explainer=adapter)
-    assert gen.call_count == 1 and r["llm"]["grounding"]["issues"] == ["unit_mismatch"]
-    assert "6.54%" not in r["explanation"]
+def groq_adapter(text):
+    provider, fake = fake_groq.provider(fake_groq.reply(text))
+    return LLMAdapter(provider), fake
 
 
 def test_groq_responses_are_validated():
-    def reply(text):
-        body = {"model": "openai/gpt-oss-20b", "choices": [{"message": {"content": text}, "finish_reason": "stop"}],
-                "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
-        requests = []
-
-        def handler(req):
-            requests.append(req)
-            return httpx.Response(200, json=body)
-        return GroqProvider(FAKE_KEY, http_client=httpx.Client(transport=httpx.MockTransport(handler))), requests
+    good = f"What the data shows: overall ROAS is {TOTALS['roas']:.2f}x."
+    adapter, fake = groq_adapter(good)
+    with patch.object(grounding, "validate_explanation", wraps=grounding.validate_explanation) as spy:
+        r = qr.route_query(OVERALL_Q, {}, explainer=adapter)
+    assert len(fake.requests) == 1 and spy.call_count == 1 and r["explanation"] == good
+    assert r["llm"]["provider"] == "groq" and r["llm"]["grounding"]["passed"] is True
+    adapter, fake = groq_adapter("ROAS is 6.54%.")  # a ratio written as a percentage
+    r = qr.route_query(OVERALL_Q, {}, explainer=adapter)
+    assert len(fake.requests) == 1 and r["llm"]["grounding"]["issues"] == ["unit_mismatch"]
+    assert "6.54%" not in r["explanation"]
 
     tablet = entity(DEVICE, "Tablet")
-    provider, requests = reply(f"Tablet CPA is ${tablet['cpa']}.")
-    with patch.object(grounding, "validate_explanation", wraps=grounding.validate_explanation) as spy:
-        r = qr.route_query(DEVICE_Q, {}, explainer=LLMAdapter(provider))
-    assert len(requests) == 1 and spy.call_count == 1 and r["llm"]["grounding"]["passed"] is True
-    assert r["llm"]["provider"] == "groq"
-    provider, requests = reply(f"Tablet has a higher click-through rate ({tablet['cpa']}).")
-    r = qr.route_query(DEVICE_Q, {}, explainer=LLMAdapter(provider))
-    assert len(requests) == 1 and r["llm"]["grounding"]["issues"] == ["metric_label_mismatch"]
-    # Both providers get byte-identical user prompts, so both are validated against the same facts.
-    sent = json.loads(requests[0].content)["messages"][1]["content"]
+    adapter, fake = groq_adapter(f"Tablet CPA is ${tablet['cpa']}.")
+    r = qr.route_query(DEVICE_Q, {}, explainer=adapter)
+    assert len(fake.requests) == 1 and r["llm"]["grounding"]["passed"] is True
+    adapter, fake = groq_adapter(f"Tablet has a higher click-through rate ({tablet['cpa']}).")
+    r = qr.route_query(DEVICE_Q, {}, explainer=adapter)
+    assert len(fake.requests) == 1 and r["llm"]["grounding"]["issues"] == ["metric_label_mismatch"]
+    # The answer is validated against exactly the typed context Groq was given.
+    sent = fake.user_prompt()
     assert '"metric_units"' in sent and '"analysis_scope"' in sent
 
 
 def test_direct_database_skips_llm_and_grounding():
     with patch.object(grounding, "validate_explanation", side_effect=AssertionError("validator called")) as v, \
-            patch.object(grounding, "build_llm_context", side_effect=AssertionError("context built")) as b, \
-            patch.object(genai_models.Models, "generate_content", side_effect=AssertionError("Gemini called")) as g:
+            patch.object(grounding, "build_llm_context", side_effect=AssertionError("context built")) as b:
         for q in ("What is total revenue?", "Which platform has the highest ROAS?", "Show monthly revenue.",
                   "What is the average CTR?", "Compare TikTok and LinkedIn ROAS.",
                   "Show campaigns with spend over 10000."):
@@ -422,7 +479,7 @@ def test_direct_database_skips_llm_and_grounding():
             assert body["route"] == "DIRECT_DATABASE" and "llm" not in body, (q, body)
             chat = client.post("/api/chat", json={"messages": [{"role": "user", "content": q}], "filters": {}}).json()
             assert chat["route"] == "DIRECT_DATABASE", (q, chat)
-    assert v.call_count == b.call_count == g.call_count == 0
+    assert v.call_count == b.call_count == 0 and GUARD.requests == []
     # Still millisecond-level: time the router alone (no HTTP), after warm-up.
     qr.route_query("What is total revenue?")
     started = time.perf_counter()
@@ -478,6 +535,7 @@ HISTORICAL = {
         7: {"unsupported_value"},                        # "$1.76" (the value is $1.752)
     },
     ("phase7_gemini_vs_groq_gpt-oss-20b.json", "groq"): {
+        1: {"wrong_comparison"},                         # conversion rate 3.439% "higher than" overall 4.296%
         3: {"unit_mismatch"},                            # creative-age bounds written as percentages
         4: {"month_mismatch"},                           # value attached to the wrong month
         5: {"derived_value"},                            # "3.4 times higher"
@@ -486,6 +544,7 @@ HISTORICAL = {
         9: {"unit_mismatch", "metric_label_mismatch"},   # creative age read as audience age in years
     },
     ("phase7_groq_gpt-oss-120b.json", "groq"): {
+        1: {"wrong_comparison"},                         # conversion rate 3.439% "slightly above" overall 4.296%
         4: {"unsupported_value"},                        # invented monthly low ($7,441,396)
         6: {"unsupported_value"},                        # "exceed 4" / "below 1" (not supplied)
         7: {"unsupported_value", "unit_mismatch"},       # computed margin 84.7%, "over $6"

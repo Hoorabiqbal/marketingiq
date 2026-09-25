@@ -1,8 +1,8 @@
 """
 Tests for the deterministic Query Router (query_router.py) and the /api/query endpoint.
 
-No external LLM is used: Gemini's generate_content is patched to fail loudly if
-anything calls it, so these tests never consume API quota and need no API key.
+No external LLM is used: the app's Groq provider runs on a fake transport that refuses every
+request (fake_groq.py), so these tests never consume API quota and need no API key.
 Expected numbers are computed independently from the raw DataFrame with pandas,
 never hardcoded, so they verify the router returns REAL dataset values.
 
@@ -12,13 +12,15 @@ import json
 import logging
 from unittest.mock import patch
 
+import fake_groq  # noqa: F401  (first: fake GROQ_API_KEY before main.py reads .env)
+
 from fastapi.testclient import TestClient
-from google.genai import models as genai_models
 
 import main
 import data_tools as dt
 import query_router as qr
 
+GUARD = fake_groq.block_real_calls(main.llm_adapter)
 client = TestClient(main.app)
 df = dt.get_dataframe()
 
@@ -223,13 +225,11 @@ def test_endpoint_direct_queries_never_call_an_llm():
     # direct and clarification routes must still never touch an LLM.
     queries = ["What is total revenue?", "Which platform has the highest ROAS?", "Show monthly revenue.",
                "How many campaigns are there?", "Show campaigns", "What's the weather in Paris?"]
-    with patch.object(genai_models.Models, "generate_content",
-                      side_effect=AssertionError("LLM must not be called")) as gen, \
-         patch.object(main.rotator, "call", side_effect=AssertionError("LLM must not be called")) as rot:
+    with patch.object(main.llm_adapter, "explain", side_effect=AssertionError("LLM must not be called")) as llm:
         for q in queries:
             r = client.post("/api/query", json={"query": q})
             assert r.status_code == 200, (q, r.text)
-    assert gen.call_count == 0 and rot.call_count == 0
+    assert llm.call_count == 0 and GUARD.requests == []
 
 
 def test_endpoint_returns_real_data():

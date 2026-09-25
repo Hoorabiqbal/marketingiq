@@ -7,7 +7,7 @@ HTTP load test for the MarketingIQ backend (real FastAPI app over real HTTP, no 
     options: --levels 1,5,10 --requests 600 --cooldown 30 --soak-rounds 3 --cold-burst 40
              --duckdb-threads 1 --json out.json
 
-It starts loadtest_server.py (the real app, with Gemini/Groq calls counted and refused) as a
+It starts loadtest_server.py (the real app, with Groq calls counted and refused) as a
 separate process and fires --cold-burst simultaneous requests the moment it is up (as after a
 cold start). Then for each concurrency level it sends the SAME fixed workload (--requests
 requests cycling through the same request list) from that many concurrent clients. Per level it

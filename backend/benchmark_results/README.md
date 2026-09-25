@@ -33,11 +33,19 @@ below come from reading every answer against the analysis by hand.
   payload after the rate limit, was correct.
 - **Qwen:** invented numbers and trends, wrong metric labels, generic or invented reasons.
 
-## Decision (after Phase 7)
+## Decision (after Phase 7) — superseded
 
 Gemini stays the default provider. Groq stays available as an optional hosted provider
 (`LLM_PROVIDER=groq`). The local Qwen/Ollama provider is removed (too slow on CPU and not
 grounded enough). There is no automatic failover between providers.
+
+## Current decision (Groq-only migration)
+
+Groq is now MarketingIQ's only LLM provider; Gemini was removed. The default model is
+`openai/gpt-oss-120b`: fewer material errors than `openai/gpt-oss-20b` above (3 vs 7), with
+the same free-plan limits (30 requests/min, 8K tokens/min). These runs predate the grounding
+validator, which now catches these error classes before an answer is shown (the recorded
+answers are regression fixtures in `test_grounding.py`).
 
 ## Issues found that affect every provider
 

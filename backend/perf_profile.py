@@ -13,7 +13,7 @@ Sections:
   endpoints /api/health, /api/query and /api/chat (direct and LLM_REQUIRED with a zero-delay
             mock provider) split into routing / DuckDB / context / provider / validation time
 
-The external providers are patched to fail if called: nothing here uses Gemini or Groq quota.
+The Groq provider is patched to fail if called: nothing here uses provider quota.
 Needs psutil (dev only: pip install psutil).
 """
 import argparse
@@ -53,10 +53,9 @@ def profile_startup():
     out["import_pandas_duckdb_ms"], out["rss_after_pandas_duckdb_mb"] = round((time.perf_counter() - t) * 1000), rss_mb()
     t = time.perf_counter()
     import fastapi  # noqa: F401
-    import google.genai  # noqa: F401
     import httpx  # noqa: F401
     import uvicorn  # noqa: F401
-    out["import_web_and_sdk_ms"], out["rss_after_web_and_sdk_mb"] = round((time.perf_counter() - t) * 1000), rss_mb()
+    out["import_web_ms"], out["rss_after_web_mb"] = round((time.perf_counter() - t) * 1000), rss_mb()
 
     import data_tools as dt
     phases = {}
@@ -70,7 +69,6 @@ def profile_startup():
             return r
         return wrapper
     dt.pd.read_csv, dt.create_repository = timed("csv_parse", real_read_csv), timed("duckdb_table_build", real_create)
-    os.environ.setdefault("GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY", "profile-placeholder"))
     t = time.perf_counter()
     import main  # noqa: F401  (loads the data, builds the app)
     out["import_main_ms"] = round((time.perf_counter() - t) * 1000)
@@ -239,12 +237,12 @@ def profile_endpoints(runs):
     from unittest.mock import patch
 
     from fastapi.testclient import TestClient
-    from google.genai import models as genai_models
 
     import data_tools as dt
     import grounding
     import main
     import query_router as qr
+    from groq_provider import GroqProvider
     from llm_adapter import LLMProvider
 
     class InstantProvider(LLMProvider):
@@ -273,7 +271,7 @@ def profile_endpoints(runs):
     restore = _instrument_repo(dt.get_repository())
     client = TestClient(main.app)
     out = {}
-    guard = patch.object(genai_models.Models, "generate_content", side_effect=AssertionError("real Gemini call"))
+    guard = patch.object(GroqProvider, "generate_explanation", side_effect=AssertionError("real Groq call"))
     with guard, patch.object(main.llm_adapter, "provider", InstantProvider()), \
             stage(qr, "classify_query", "classify_ms"), stage(qr, "_execute", "execute_ms"), \
             stage(grounding, "build_llm_context", "context_ms"), \

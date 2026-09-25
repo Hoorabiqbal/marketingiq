@@ -1,17 +1,19 @@
 """
-/api/chat routing: send each chat question through the Query Router first, and only
-use the original Gemini tool-use loop (main.py) as a fallback.
+/api/chat answers: every chat question goes through the Query Router. There is no
+free-form LLM fallback.
 
     latest user message
-        ├─ follow-up that depends on earlier turns ("what about TikTok?") ... fallback
         ├─ DIRECT_DATABASE ... data tools -> formatted here, no LLM call
-        ├─ LLM_REQUIRED ...... data tools -> compact analysis -> LLM Adapter (one call)
-        ├─ UNSUPPORTED (data not in the dataset) ... router's answer, no LLM call
-        └─ NEEDS_CLARIFICATION / off-topic / input the router rejects ... fallback
+        ├─ LLM_REQUIRED ...... data tools -> compact analysis -> LLM Adapter (one call,
+        │                      grounding-validated); on an LLM error: the data summary + a notice
+        ├─ UNSUPPORTED / NEEDS_CLARIFICATION ... the router's own message, no LLM call
+        ├─ CHART ............. explicit chart request -> data tools -> validated chart spec
+        │                      (chart_builder.py), no LLM call; "Show ..." answers that are already
+        │                      a series or ranking also carry the same kind of chart
+        └─ follow-up that depends on earlier turns ("what about TikTok?"), empty or rejected
+           input ... a request to ask the full question, no LLM call
 
-decide() never calls the fallback itself and never retries: at most one explanation
-call happens here, and a request that got an answer (or an LLM error) here never
-reaches the fallback, so one question can't trigger two LLM paths.
+At most one LLM call per question, never retried here.
 
 Answers are HTML (the dashboard inserts `answer` as HTML): every value is escaped
 and line breaks are <br>.
@@ -20,7 +22,9 @@ import html
 import re
 from dataclasses import dataclass
 
+import chart_builder
 import data_tools as dt
+import grounding
 import query_router as qr
 
 # Only checked when there IS earlier conversation: wording that leans on a previous turn.
@@ -31,39 +35,78 @@ FOLLOW_UP_RE = re.compile(
 )
 
 
+CLARIFY = qr.Route.NEEDS_CLARIFICATION.value
+ASK_A_QUESTION = "Ask a question about your MarketingIQ campaign data. " + qr.SUPPORTED_HINT
+ASK_IN_FULL = ("Please ask that as a complete question, for example \"What is TikTok's ROAS?\". "
+               "Each question is answered from the data on its own, so answers can't build on "
+               "earlier messages.")
+
+
 @dataclass
 class ChatDecision:
-    route: str                 # DIRECT_DATABASE / LLM_REQUIRED / UNSUPPORTED / DATA_ERROR / FALLBACK
-    answer: str = None         # None -> use the fallback
-    reason: str = None         # why the fallback was chosen, or the LLM status
+    route: str                 # DIRECT_DATABASE / LLM_REQUIRED / UNSUPPORTED / NEEDS_CLARIFICATION / DATA_ERROR
+    answer: str                # HTML
+    reason: str = None         # the LLM status, or why no data answer was given
+    chart: dict = None         # a validated chart spec (chart_builder.validate_chart), or None
 
 
-def decide(question: str, has_history: bool, filters: dict, explainer, llm_error_answer) -> ChatDecision:
-    """llm_error_answer(llm_result) -> user-facing text for a failed explanation."""
+def decide(question: str, has_history: bool, filters: dict, explainer) -> ChatDecision:
     if not question or not question.strip():
-        return ChatDecision("FALLBACK", reason="no_question")
+        return ChatDecision(CLARIFY, html.escape(ASK_A_QUESTION), reason="no_question")
     if has_history and FOLLOW_UP_RE.search(question):
-        return ChatDecision("FALLBACK", reason="follow_up")
+        return ChatDecision(CLARIFY, html.escape(ASK_IN_FULL), reason="follow_up")
+    if chart_builder.wants_chart(question):
+        return _chart(question, filters)
     try:
         r = qr.route_query(question, filters, explainer=explainer)
-    except qr.InvalidQueryError:
-        return ChatDecision("FALLBACK", reason="router_rejected_input")
+    except qr.InvalidQueryError as e:
+        return ChatDecision(CLARIFY, html.escape(e.public_message), reason="invalid_query")
     except qr.QueryRouterError as e:
-        return ChatDecision("DATA_ERROR", answer=html.escape(e.public_message), reason=type(e).__name__)
+        return ChatDecision("DATA_ERROR", html.escape(e.public_message), reason=type(e).__name__)
 
     route = r["route"]
     if route == qr.Route.DIRECT_DATABASE.value:
-        return ChatDecision(route, answer=format_direct(r))
+        chart = chart_builder.from_direct_result(r) if chart_builder.SHOW_RE.search(question) else None
+        return ChatDecision(route, format_direct(r), chart=chart)
     if route == qr.Route.LLM_REQUIRED.value:
         llm = r["llm"]
         if llm["status"] == "ok":
-            return ChatDecision(route, answer=explanation_html(r["explanation"]), reason="ok")
+            return ChatDecision(route, explanation_html(r["explanation"]), reason="ok")
         if llm["status"] == "skipped":  # empty analysis: the LLM was never called
-            return ChatDecision(route, answer=html.escape(llm["message"]), reason=llm.get("error"))
-        return ChatDecision(route, answer=llm_error_answer(llm), reason=llm.get("error"))
-    if route == qr.Route.UNSUPPORTED.value and r.get("reason") == "unavailable_data":
-        return ChatDecision(route, answer=html.escape(r["message"]), reason="unavailable_data")
-    return ChatDecision("FALLBACK", reason=r.get("reason") or route.lower())
+            return ChatDecision(route, html.escape(llm["message"]), reason=llm.get("error"))
+        return ChatDecision(route, _data_without_explanation(question, r, llm["message"]), reason=llm.get("error"))
+    # UNSUPPORTED (data not in the dataset, off-topic) or NEEDS_CLARIFICATION: the router's message.
+    return ChatDecision(route, html.escape(r.get("message") or ASK_A_QUESTION), reason=r.get("reason"))
+
+
+CHART_FAILED = "I couldn't build a reliable chart for that request. Try asking for the figures as text."
+
+
+def _chart(question: str, filters: dict) -> ChatDecision:
+    try:
+        c = chart_builder.build_chart(question, filters)
+    except qr.InvalidQueryError as e:
+        return ChatDecision(CLARIFY, html.escape(e.public_message), reason="invalid_query")
+    except qr.QueryRouterError as e:
+        return ChatDecision("DATA_ERROR", html.escape(e.public_message), reason=type(e).__name__)
+    except chart_builder.ChartSpecError as e:
+        qr.logger.warning(f"chart spec rejected: {e}")
+        return ChatDecision("DATA_ERROR", html.escape(CHART_FAILED), reason="chart_invalid")
+    if c.chart is None:
+        return ChatDecision(c.route, html.escape(c.message), reason="chart_unresolved")
+    answer = html.escape(c.message)
+    note = _filter_note({"filters_applied": c.filters_applied, "scope": c.scope})
+    if note:
+        answer += f"<br><i>Filtered view: {_e(note)}.</i>"
+    return ChatDecision("CHART", answer, reason="chart", chart=c.chart)
+
+
+def _data_without_explanation(question: str, r: dict, notice: str) -> str:
+    """The explanation failed (rate limit, timeout, busy, ...): show the supplied figures, which
+    come straight from DuckDB, followed by the neutral notice."""
+    context = grounding.build_llm_context(question, {"filters_applied": r["filters_applied"],
+                                                     "focus_metrics": r["focus_metrics"], "results": r["analysis"]})
+    return explanation_html(grounding.safe_summary(context, note=notice))
 
 
 # ---------------------------------------------------------------------------

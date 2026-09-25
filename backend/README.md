@@ -1,41 +1,27 @@
 # MarketingIQ AI Analyst — Backend
 
-A small FastAPI service that gives the AI Analyst chat real, tool-grounded access to the
-full MarketingIQ dataset via **Google Gemini's** tool-use (function calling) — using
-Gemini's genuine, ongoing, **free tier** (no credit card, no billing setup required).
-
-## Why Gemini instead of Claude/OpenAI
-
-Anthropic's and OpenAI's APIs both require billing to be enabled for any real usage —
-neither has an ongoing free tier (Anthropic gives a small one-time trial credit for new
-accounts, but nothing beyond that). Google's Gemini API is the one major-provider option
-with a genuine, no-card-required free tier (Flash-class models, ~1,500 requests/day) that
-also supports the same tool-use/function-calling pattern this project needs. Nothing here
-uses an unofficial, shared, or bypassed key — it's Google's own free tier, used as intended.
+A small FastAPI service behind the dashboard's AI Analyst. Every question goes through a
+deterministic **Query Router** and is answered from the real MarketingIQ dataset in
+**DuckDB**. Only "why / explain" questions use an LLM — **Groq**, the only provider — and
+only to explain a compact analysis the router computed. Every LLM answer is checked by a
+deterministic **grounding validator** before anyone sees it.
 
 ## How it works
 
 ```
-Your question + chat history + active dashboard filters
+Your question (+ active dashboard filters)
         │
         ▼
-Gemini (gemini-2.5-flash) — decides which tool(s) answer your question
-        │
-        ▼
-FastAPI executes that tool against the real pandas dataframe
-(the same dashboard filters you have active are applied automatically)
-        │
-        ▼
-Real numbers go back to Gemini
-        │
-        ▼
-Gemini writes the final answer using ONLY those real numbers
+Query Router (query_router.py) — keyword/regex rules, no LLM
+        ├── DIRECT_DATABASE ──► DuckDB ──► exact answer (0 LLM calls)
+        ├── LLM_REQUIRED ─────► DuckDB ──► compact typed analysis ──► Groq
+        │                                   ──► grounding validator ──► safe answer
+        └── UNSUPPORTED / NEEDS_CLARIFICATION ──► the router's message (0 LLM calls)
 ```
 
-Gemini is never given the raw dataset and never answers from memory — every number in
-every answer comes from one of the tool functions in `data_tools.py` (completely
-unchanged from the original design — only the LLM-calling code in `main.py` differs),
-which query the actual CSV with pandas.
+The LLM never chooses tools, never sees the dataset and never answers from memory: it only
+explains the figures it is handed, and an answer with a number the data doesn't support is
+replaced by a deterministic summary of the data.
 
 ## Setup
 
@@ -44,20 +30,15 @@ which query the actual CSV with pandas.
    pip install -r requirements.txt
    ```
 
-2. **Get one or more free API keys** — no credit card, no billing setup:
-   - Go to https://aistudio.google.com/apikey (repeat with a different Google account for
-     additional keys, if you want automatic fallback — see below)
-   - Sign in with any Google account
-   - Click "Create API key" — that's it, no payment method requested
+2. **Get a Groq API key** at https://console.groq.com/keys.
 
-3. **Add your key(s)**:
+3. **Add it**:
    ```
    copy .env.example .env
    ```
-   Open `.env` and either set `GEMINI_API_KEY=` for a single key, or
-   `GEMINI_API_KEY_1=`, `GEMINI_API_KEY_2=`, `GEMINI_API_KEY_3=`, ... for automatic
-   fallback across multiple keys (see "Automatic key fallback" below).
-   **Never commit `.env`** — it's already in `.gitignore`.
+   Open `.env` and set `GROQ_API_KEY=`. **Never commit `.env`** — it's already in
+   `.gitignore`. Without a key the app still starts and answers database questions;
+   explanations report the AI service as unavailable.
 
 4. **Run the server**:
    ```
@@ -66,91 +47,56 @@ which query the actual CSV with pandas.
 
 5. **Verify it's working** — open http://localhost:8000/api/health. You should see:
    ```
-   {"status":"ok","campaigns_loaded":10000,"gemini_key_configured":true,"gemini_keys_configured":1}
+   {"status":"ok","campaigns_loaded":10000,"data_backend":"duckdb","llm_provider":"groq",
+    "llm_model":"openai/gpt-oss-120b","llm_configured":true}
    ```
-   If `gemini_key_configured` is `false`, the `.env` file isn't being found or is empty —
+   If `llm_configured` is `false`, the `.env` file isn't being found or has no key —
    double check it's named exactly `.env` (not `.env.txt`) and sits directly in this folder.
 
-6. **Open the dashboard** (`site/index.html`, served locally — see the main project docs
-   for why `file://` doesn't work for the AI Analyst) and try the AI Analyst tab.
+6. **Open the dashboard**, served locally (`python -m http.server 5500 --bind 127.0.0.1
+   --directory site` from the project root, then http://127.0.0.1:5500/dashboard.html).
+   When served from localhost / 127.0.0.1 it calls this local backend.
 
-## Automatic key fallback
+## Groq limits to know
 
-If you're doing heavy testing (or expect real usage) and don't want a single free-tier
-quota to be a bottleneck, set `GEMINI_API_KEY_1`, `GEMINI_API_KEY_2`, `GEMINI_API_KEY_3`, etc.
-instead of a single `GEMINI_API_KEY`. Behavior (implemented in `gemini_rotator.py`):
+On Groq's free plan, `openai/gpt-oss-120b` and `openai/gpt-oss-20b` both allow 30
+requests/minute, 1,000/day, **8,000 tokens/minute** and 200,000 tokens/day (check your
+live limits at https://console.groq.com/settings/limits). One explanation uses roughly
+2,000 tokens (prompt plus the model's hidden reasoning), so the token limit allows only a
+few explanations per minute for the whole app. When it is reached, users see the figures
+with a "temporarily rate-limited" notice; the request is not retried. Database questions
+never use Groq and are unaffected.
 
-- Requests use one key normally — **keys are not rotated on every request**, only when
-  the current one actually hits its quota.
-- On a quota/rate-limit error (429), the backend automatically retries with the next
-  configured key. It remembers which key last worked, so future requests start there
-  directly rather than re-trying an already-exhausted key every time.
-- An authentication error (a genuinely invalid key) does **not** trigger rotation — that's
-  a configuration problem reported directly, since a different key wouldn't fix a typo'd one.
-- If every configured key is out of quota, you get one clean message rather than a raw error.
-- Add as many `GEMINI_API_KEY_<n>` as you want — no code changes needed.
+## How `/api/chat` answers
 
-## Free tier limits to know
-
-- ~1,500 requests/day, ~15 requests/minute (exact limits are set per-project by Google and
-  can change — check your live quota at https://aistudio.google.com)
-- If you hit the limit, the chat will show a clear rate-limit message rather than crash —
-  just wait a bit and try again
-- Google's terms allow using free-tier prompts to improve their models. If you're testing
-  with anything sensitive, keep that in mind (this project's dataset is synthetic/public,
-  so it's a non-issue here)
-
-## Testing without an API key
-
-`test_app.py` exercises the entire tool-use loop (routing, filter injection, hallucination
-guarding, multi-tool chains, the infinite-loop safety cap, and the "no key configured"
-path) using **mocked** Gemini responses built from the real SDK's own types, so you can
-verify the plumbing works before you have a real key:
-```
-python test_app.py
-```
-
-## How `/api/chat` answers (Query Router first, Gemini tool-use loop as fallback)
-
-The chat API is unchanged for the dashboard: it still takes `{messages, filters}` and
-returns `{answer}`, now with an extra `route` field. The latest question goes through
-`chat_routing.py`:
+The dashboard sends `{messages, filters}` and gets `{answer, route}`; `answer` is HTML
+(every value escaped). Only the latest question is answered, through `chat_routing.py`:
 
 | Route | When | LLM calls |
 |---|---|---|
 | `DIRECT_DATABASE` | The router maps the question to one data tool ("total revenue", "highest ROAS by platform", "monthly revenue") | **0**. The answer is built from the DuckDB result |
-| `LLM_REQUIRED` | "why" / "explain" questions | **1** explanation through the LLM Adapter, using the compact analysis |
-| `UNSUPPORTED` | Asks for data the dataset doesn't have (e.g. countries) | 0 |
-| `FALLBACK` | Everything the router can't plan confidently: judgement calls ("high spend", "underperforming"), relative dates ("last month"), follow-ups that depend on earlier messages ("what about TikTok?"), small talk | The original Gemini tool-use loop |
+| `LLM_REQUIRED` | "why" / "explain" questions | **1** Groq call through the LLM Adapter, on the compact analysis, grounding-validated |
+| `UNSUPPORTED` | Data the dataset doesn't have (e.g. countries), or not about the campaign data | 0: the router's message |
+| `NEEDS_CLARIFICATION` | Judgement calls ("underperforming"), relative dates ("last month"), follow-ups that depend on earlier messages ("what about TikTok?"), empty or invalid input | 0: a message saying what can be asked |
 
-A request never goes down two LLM paths: once a question is answered or explained on the
-routed path, it never reaches the fallback. Set `CHAT_ROUTER_ENABLED=0` to send every
-chat request straight to the original tool-use loop, as a rollback switch.
+There is no free-form LLM fallback. **Conversation history** is only used to spot
+follow-ups: a question that leans on an earlier turn (pronouns like "it"/"that", or
+openers like "and…" / "what about…") gets a request to ask the full question, because
+answering it without that context could silently answer the wrong question.
 
-**Conversation history:** the router only looks at the latest question. When there is
-earlier conversation and the question leans on it (pronouns like "it"/"that", or openers
-like "and…" / "what about…"), it goes to the fallback, which receives the full history.
-There is no separate conversation memory.
+When an explanation fails (rate limit, timeout, too many running, service unavailable),
+the chat still shows the figures from DuckDB, followed by a neutral notice. Users never see
+the provider's name, model or configuration; the server log has the details.
 
-**Who owns retries and timeouts** (so one failure is retried in exactly one place):
-
-| Concern | Owner |
-|---|---|
-| Quota errors: switch to the next API key | `GeminiKeyRotator` |
-| Per-request HTTP timeout and overall deadline | `call_gemini()` in `gemini_provider.py` |
-| Transient 5xx / network errors: at most 3 attempts, with backoff, within the deadline | `call_gemini()` |
-| Turning an error into a user message | `LLMAdapter` (explanations), or `_message_for_error` (fallback) |
-
-The SDK's own retries are off. The endpoint, adapter and router add none. With
-`LLM_PROVIDER=groq`, each explanation gets at most one retry on a 5xx or network error,
-within the deadline, and a 429 is never retried. Deadlines are
-`LLM_TIMEOUT_SECONDS` (default 25) for an explanation and
-`CHAT_FALLBACK_TIMEOUT_SECONDS` (default 45) for the whole fallback loop.
+**Retries and timeouts:** one request per explanation within `LLM_TIMEOUT_SECONDS`
+(default 25), plus at most one retry on a 5xx or network error inside that deadline. A 429
+rate limit, a timeout, an auth error or a malformed response is never retried. The
+endpoint, adapter and router add no retries of their own.
 
 ## Data layer (DuckDB)
 
 ```
-Query Router / Gemini tool calls
+Query Router
         │  (known tools only — no free-form SQL)
         ▼
 data_tools.py          business logic: metric formulas, what each dashboard filter means,
@@ -184,8 +130,8 @@ DuckDB (in-memory)     primary engine  ·  Pandas: automatic fallback + correctn
 
 ### Performance and load testing
 
-Dev-only tools (`pip install -r requirements-dev.txt`, which adds `psutil`). No real Gemini or
-Groq call is ever made.
+Dev-only tools (`pip install -r requirements-dev.txt`, which adds `psutil`). No real Groq
+call is ever made.
 
 ```
 python perf_profile.py                        # startup phases, memory inventory, DuckDB ops,
@@ -196,8 +142,8 @@ python loadtest.py --mode direct              # DIRECT_DATABASE mix at 1/5/10/15
 python loadtest.py --mode llm --mock-delay-ms 1500 --requests 200   # LLM path, mocked provider
 ```
 
-`loadtest.py` starts `loadtest_server.py`: the real app under uvicorn, with Gemini and Groq
-calls counted and refused, and optionally a fixed-delay mock provider. Each level sends the
+`loadtest.py` starts `loadtest_server.py`: the real app under uvicorn, with Groq calls
+counted and refused, and optionally a fixed-delay mock provider. Each level sends the
 same fixed workload. Every response is compared with a reference answer taken before the load
 (so races or corrupted shared state show up as `wrong_answer`), the server must stay healthy
 after each level, and the provider counters must stay at 0. `--duckdb-threads N` overrides
@@ -205,10 +151,11 @@ DuckDB's thread count so the setting can be re-measured on the deployment host.
 
 Measured on a 4-core laptop (server and load generator on the same machine; the laptop's speed
 varied by up to ~50% between sessions, so compare only interleaved runs):
-- Memory: about 150–160 MB RSS after startup, mostly libraries (pandas + DuckDB ~65 MB, FastAPI
-  / google-genai / httpx ~42 MB). The dataset is ~12 MB in DuckDB. Under sustained load RSS
-  settles around 180–235 MB; the Python heap and DuckDB's own memory stay flat, and the growth
-  slows over time (native allocator behaviour, not a Python leak).
+- Memory: about 130 MB RSS after startup (about 152 MB before google-genai was removed),
+  mostly libraries (pandas + DuckDB ~65 MB). The dataset is ~12 MB in DuckDB. Under sustained
+  load (measured before the removal) RSS settled around 180–235 MB; the Python heap and
+  DuckDB's own memory stay flat, and the growth slows over time (native allocator behaviour,
+  not a Python leak).
 - `DIRECT_DATABASE`: 3–6 ms server time, 6–15 ms over HTTP; about 200–390 req/s at 5–20
   concurrent users with no errors.
 - `LLM_REQUIRED` with a 1.5 s mock provider: about 15–35 ms of local work on top of the
@@ -223,8 +170,8 @@ varied by up to ~50% between sessions, so compare only interleaved runs):
 ## Query Router (`/api/query`)
 
 `query_router.py` is a deterministic routing layer that decides where a question goes
-**without calling any LLM** (keyword/regex rules, no API call to classify). It runs
-alongside `/api/chat`, which is unchanged and still uses its own Gemini tool-use loop.
+**without calling any LLM** (keyword/regex rules, no API call to classify). `/api/chat`
+uses it for every question; `/api/query` exposes its full JSON result.
 
 ```
 POST /api/query   {"query": "Which platform has the highest ROAS?", "filters": {...}}
@@ -233,12 +180,11 @@ POST /api/query   {"query": "Which platform has the highest ROAS?", "filters": {
 | Route | When | What comes back |
 |---|---|---|
 | `DIRECT_DATABASE` | The question maps to one existing tool ("total revenue", "highest ROAS by platform", "monthly revenue", "campaigns with ROAS above 8") | `tool`, `tool_input` and the exact `result` from that tool |
-| `LLM_REQUIRED` | The question asks for an explanation ("why", "explain", "what's causing") | `analysis` (a few small tool results), `explanation` (text from the LLM Adapter, or `null` if it failed) and `llm` (status, provider, error code) |
+| `LLM_REQUIRED` | The question asks for an explanation ("why", "explain", "what's causing") | `analysis` (a few small tool results), `explanation` (grounding-validated text, or `null` if the LLM failed) and `llm` (status, provider, error code, grounding verdict) |
 | `NEEDS_CLARIFICATION` / `UNSUPPORTED` | Ambiguous, or asks for something the dataset doesn't have (e.g. geography) | A `message` explaining what can be asked |
 
 The router is not a second analytics engine: every number comes from an existing
-`data_tools.py` function (`TOOL_REGISTRY`), with the active dashboard filters applied
-exactly as in `/api/chat`.
+`data_tools.py` function (`TOOL_REGISTRY`), with the active dashboard filters applied.
 
 **Why the LLM never gets the full dataset:** for `LLM_REQUIRED` the router runs at most 3
 tools and caps each list (at most 10 campaign rows and 30 series points, 16 KB total), so
@@ -250,37 +196,30 @@ Errors return a safe message with no stack trace: `400` for an empty or invalid 
 tool fails. Each request writes one structured log line (query, route, tools,
 elapsed_ms, status).
 
-### LLM providers (Gemini by default, Groq optional)
+### LLM provider: Groq
 
-Explanations for `LLM_REQUIRED` questions come from **one** provider, chosen at startup:
+Groq is the only LLM provider; there is no provider selection and no failover.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `LLM_PROVIDER` | `gemini` | `gemini` (Google API) or `groq` (Groq API). Any other value stops startup |
-| `GROQ_API_KEY` | none | Groq API key (console.groq.com). Put it in `.env`, never in code. Without it, `groq` still starts but explanations report `not_configured` |
-| `GROQ_MODEL` | `openai/gpt-oss-20b` | Groq model ID. Which models are available depends on the Groq account (check `GET /openai/v1/models`). Reasoning models (`openai/gpt-oss-*`) run with `reasoning_effort=low`, reasoning hidden |
+| `GROQ_API_KEY` | none | Groq API key. Put it in `.env` (or Render's environment), never in code. Without it the app starts, and explanations report the AI service as unavailable |
+| `GROQ_MODEL` | `openai/gpt-oss-120b` | Groq model ID (a production model, not preview; chosen over `openai/gpt-oss-20b` for better grounding accuracy in `benchmark_results/`). Reasoning models (`openai/gpt-oss-*`) run with `reasoning_effort=low`, reasoning hidden |
 | `LLM_TIMEOUT_SECONDS` | 25 | Deadline per explanation |
+| `LLM_MAX_CONCURRENT` | 20 | Explanations allowed to wait on Groq at once (see below) |
 
-`/api/health` shows the active `llm_provider` and `llm_model` (never a key).
+`/api/health` shows `llm_provider`, `llm_model` and `llm_configured` (never the key). A
+leftover `LLM_PROVIDER` variable from older configurations is ignored (logged at startup).
 
-- Both providers get the **same input**: the question plus the same compact analysis
-  (`build_user_prompt`) and the same system prompt (`GROUNDING_INSTRUCTIONS`).
-- Groq: one request per explanation within the deadline, plus one retry on a 5xx or network
-  error. A 429 rate limit is reported, never retried. The key is only sent in the
-  Authorization header and is never logged. Free-tier token limits per minute can be low
-  (8K tokens/min was seen for `openai/gpt-oss-120b`, about 5 explanations a minute).
-- There is **no automatic failover.** If the selected provider fails, the answer says so.
-- At most `LLM_MAX_CONCURRENT` (default 20) requests wait on an LLM at once, shared by
-  explanations and the chat fallback. Extra ones get an immediate `busy` answer (the figures are
-  still returned) instead of queueing, so slow provider calls can't take every server worker
-  and database answers stay fast. Measured: with 45 explanations in flight on an 8 s provider,
-  database answers took 6.4 s without the cap and 14 ms with it.
-  `DIRECT_DATABASE` questions never use any provider. The `/api/chat` fallback for
-  unresolved questions is always the Gemini tool-use loop, whichever provider is selected.
-- `benchmark_llm_providers.py` runs the same 10 questions through each provider and reports
-  latency and grounding checks. Past results, including a local Qwen model through Ollama
-  that was evaluated and then removed (too slow on CPU, not grounded enough), are in
-  `benchmark_results/`.
+- The key is only sent in the Authorization header and is never logged; auth-error bodies
+  aren't logged either. A 429 is logged with Groq's rate-limit headers.
+- At most `LLM_MAX_CONCURRENT` (default 20) requests wait on Groq at once. Extra ones get an
+  immediate `busy` answer (the figures are still returned) instead of queueing, so slow
+  provider calls can't take every server worker and database answers stay fast. Measured:
+  with 45 explanations in flight on an 8 s provider, database answers took 6.4 s without
+  the cap and 14 ms with it. `DIRECT_DATABASE` questions never use the provider.
+- `benchmark_llm_providers.py` runs the same 10 questions through one or more Groq models
+  and reports latency and grounding checks. Past results, including Gemini and a local Qwen
+  model (both evaluated and removed), are in `benchmark_results/`.
 
 ### LLM Adapter
 
@@ -288,25 +227,15 @@ Explanations for `LLM_REQUIRED` questions come from **one** provider, chosen at 
 `LLMProvider` interface (`generate_explanation(question, analysis, timeout_s)`) plus an
 `LLMAdapter` that validates the analysis before anything is sent. It refuses anything that
 isn't plain JSON (such as a DataFrame), anything over 16 KB, and empty results. It also
-turns every provider failure into a structured `llm` result, so the analysis is still
-returned when the LLM is down.
-
-There are two providers: `gemini_provider.py` (default) and `groq_provider.py` (optional).
-The Gemini provider reuses the app's existing
-`GeminiKeyRotator`, so it has the same keys and quota rotation as `/api/chat`. It makes one
-call per question, with shared grounding instructions: use only the supplied numbers, keep
-facts and interpretation separate, and stay short. Each call has a hard timeout
-(`LLM_TIMEOUT_SECONDS`, default 25) that also bounds the server-error retries.
-`DIRECT_DATABASE` questions never reach the adapter.
-
-To add a provider, subclass `LLMProvider`, raise the `llm_adapter` error types, and pass it
-to `LLMAdapter` in `main.py`.
+turns every provider failure into a structured `llm` result with a neutral user-facing
+message, so the analysis is still returned when the LLM is down. `groq_provider.py`
+implements the interface; tests use a fake transport (`fake_groq.py`).
 
 ### Grounding (`grounding.py`)
 
-Every provider gets the same **typed context**, and every provider answer goes through the
-same **numerical-claim validator**. Both run in the adapter, so Gemini and Groq are treated
-identically and `DIRECT_DATABASE` never touches either.
+Groq gets a **typed context**, and every Groq answer goes through a deterministic
+**numerical-claim validator**. Both run in the provider-independent adapter, and
+`DIRECT_DATABASE` never touches either.
 
 **Typed context** (built from the router's analysis. It describes the metrics and never
 recomputes one):
@@ -346,16 +275,18 @@ never the question, the answer text or any key.
 **Limits**: numbers written as words ("three times") aren't checked. A comparison between two
 supported values ("A is higher than B") isn't checked. Bounds such as "ROAS below 1" or
 "over $6" count as unsupported unless that number is in the data. The causal check is a
-keyword heuristic. The `/api/chat` fallback (Gemini tool-use loop) is not validated.
+keyword heuristic.
 
-Tests (no API key or quota needed, since Gemini is mocked and fails if called for real):
+Tests (no API key or quota needed: Groq runs on a fake transport, `fake_groq.py`):
 ```
+python test_app.py
 python test_query_router.py
 python test_llm_adapter.py
 python test_data_layer.py
 python test_chat_migration.py
 python test_groq_provider.py
 python test_grounding.py
+python test_charts.py
 ```
 
 ## Adding a new askable dimension or metric
@@ -387,14 +318,10 @@ Environment variables (see `.env.example`; never commit keys):
 
 | Variable | Status | Default / notes |
 |---|---|---|
-| `GEMINI_API_KEY` or `GEMINI_API_KEY_1`, `_2`, … | **Required** | Gemini explanations and the chat fallback. Numbered keys rotate on quota errors. |
-| `LLM_PROVIDER` | Optional | `gemini` (default) or `groq`. No failover. |
-| `GROQ_API_KEY` | Optional (required if `LLM_PROVIDER=groq`) | |
-| `GROQ_MODEL` | Optional | `openai/gpt-oss-20b` |
+| `GROQ_API_KEY` | **Required** | Groq explanations. Without it the app starts; explanations report the AI service as unavailable. |
+| `GROQ_MODEL` | Optional | `openai/gpt-oss-120b` |
 | `LLM_TIMEOUT_SECONDS` | Optional | `25` |
-| `LLM_MAX_CONCURRENT` | Optional | `20`. Requests beyond this waiting on an LLM get an immediate "busy" answer. |
-| `CHAT_FALLBACK_TIMEOUT_SECONDS` | Optional | `45` |
-| `CHAT_ROUTER_ENABLED` | Optional | `1`; `0` is the rollback switch to the Gemini tool-use loop. |
+| `LLM_MAX_CONCURRENT` | Optional | `20`. Explanations beyond this waiting on Groq get an immediate "busy" answer. |
 | `CORS_ALLOW_ORIGINS` | Optional | `https://marketingiqp.netlify.app` (comma-separated; `*` = any) |
 | `MARKETINGIQ_DATA_BACKEND` | Optional | `duckdb`; `pandas` forces the fallback backend. |
 | `MARKETINGIQ_CSV_PATH` | Optional | `../data/tech_advertising_campaigns_dataset.csv` |
@@ -402,6 +329,8 @@ Environment variables (see `.env.example`; never commit keys):
 
 Development only: `requirements-dev.txt` (`psutil`) for `perf_profile.py` and `loadtest.py`.
 
-- If the project grows beyond the free tier's request volume, Gemini's paid tier (or
-  switching back to a paid Claude/OpenAI key using the same tool-use pattern) is a
-  drop-in upgrade — the `data_tools.py` layer doesn't change either way.
+No longer used (safe to delete from Render's environment): `GEMINI_API_KEY`,
+`GEMINI_API_KEY_1`…, `LLM_PROVIDER`, `CHAT_ROUTER_ENABLED`, `CHAT_FALLBACK_TIMEOUT_SECONDS`.
+
+If explanations outgrow Groq's free-plan limits, a paid Groq plan raises them with no code
+change; the data layer and the router don't depend on the LLM at all.
