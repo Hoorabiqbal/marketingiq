@@ -85,8 +85,10 @@ GREETING_RE = _c(r"^\W*(?:hi|hello|hey|hiya|howdy|greetings|good (?:morning|afte
 THANKS_RE = _c(r"^\W*(?:thanks?(?: you)?(?: so much| a lot| very much)?|thank you(?: so much| very much)?|ty|cheers"
                r"|great|awesome|perfect|cool|nice|ok(?:ay)?|got it|excellent|amazing|brilliant|wonderful)"
                r"(?:\W+(?:thanks?|thank you))?\W*$")
-IDENTITY_RE = _c(r"^\W*(?:who are you|what are you|what can you do|what do you do|how can you help(?: me)?|help"
-                 r"|what can i ask(?: you)?|what should i ask)\W*$")
+IDENTITY_RE = _c(r"^\W*(?:who are you|what are you|what (?:can|do) you do|what (?:can|could) you help(?: me)?(?: with)?"
+                 r"|how (?:can|could|do) you help(?: me)?|help(?: me)?|what can i ask(?: you)?|what should i ask(?: you)?"
+                 r"|what (?:kind of |sort of )?questions (?:can|could|should) i ask(?: you)?"
+                 r"|what are your (?:capabilities|features|skills))\W*$")
 PERSONAL_RE = _c(r"\b(?:marriage|married|marry|wife|husband|spouse|girlfriend|boyfriend|dating|divorce"
                  r"|relationship advice|love life|break ?up|wedding|my (?:family|kids|children|parents|mom|dad"
                  r"|mother|father|son|daughter)|lonely|depress\w*|therapy|horoscope)\b")
@@ -94,9 +96,10 @@ PERSONAL_RE = _c(r"\b(?:marriage|married|marry|wife|husband|spouse|girlfriend|bo
 GREETING = ("Hi! I'm the MarketingIQ AI Analyst. Ask me about your campaign data, for example "
             "\"Show revenue by platform\" or \"Is January revenue increasing over time?\".")
 THANKS = "Glad to help! What would you like to look at next?"
-IDENTITY = ("I'm MarketingIQ's AI analyst for your campaign dataset. I answer questions about totals, "
-            "rankings, comparisons and trends, draw line, bar and pie charts, and follow up on the previous "
-            "answer: try \"Show revenue by platform\", then \"make it a pie chart\" or \"now show spend\".")
+IDENTITY = ("I'm the MarketingIQ AI Analyst. I can analyze your campaign data, compare performance, investigate "
+            "trends, apply filters, answer follow-up questions and create charts from your data. For example: "
+            "\"Which platform has the highest ROAS?\", \"Compare TikTok and Google Ads revenue\" or "
+            "\"Show monthly spend as a line chart\".")
 PERSONAL = ("I'm sorry, I can't help with that. I'm MarketingIQ's analyst, so I only work with the campaign "
             "dataset. I'd be glad to help with a question like \"Which platform has the best ROAS?\".")
 

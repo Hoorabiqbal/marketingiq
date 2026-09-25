@@ -156,6 +156,28 @@ def test_conversation8_greeting():
     assert c.state.plan is None
 
 
+def test_capability_questions_are_conversation():
+    from unittest.mock import patch
+    import campaign_repository as cr
+    c = Chat()
+    c.ask("Show revenue by platform.")
+    remembered = c.state.plan
+    phrases = ("What can you help me with?", "What can you do?", "What do you do?", "How can you help me?",
+               "What can I ask you?", "What questions can I ask?", "What are your capabilities?")
+    with patch.object(cr.DuckDBCampaignRepository, "_run", side_effect=AssertionError("DuckDB queried")):
+        for text in phrases:
+            body, calls = c.ask(text)
+            assert calls == 0 and body["route"] == "CONVERSATION" and body["chart"] is None, text
+            assert body["answer"].startswith("I&#x27;m the MarketingIQ AI Analyst") and "charts" in body["answer"]
+        for text, route in (("Hi", "CONVERSATION"), ("Thanks", "CONVERSATION"),
+                            ("Can you give me family advice?", "UNSUPPORTED")):
+            body, calls = c.ask(text)
+            assert calls == 0 and body["route"] == route, text
+    assert c.state.plan is remembered  # analytics memory untouched
+    body, calls = c.ask("What is the capital of France?")  # unrelated knowledge: still the scope redirect
+    assert calls == 0 and body["route"] == "UNSUPPORTED" and "MarketingIQ" in body["answer"]
+
+
 def test_conversation9_personal_topic_redirect_without_memory_pollution():
     c = Chat()
     c.ask("Show revenue by platform.")
