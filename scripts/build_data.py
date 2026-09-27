@@ -28,7 +28,7 @@ campaign_cols = {
     'device_type': 'device', 'target_audience_age': 'age', 'target_audience_gender': 'gender',
     'industry_vertical': 'vertical', 'budget_tier': 'budget', 'retargeting_flag': 'retargeting',
     'creative_format': 'creative', 'creative_emotion': 'emotion', 'ad_placement': 'placement',
-    'income_bracket': 'income', 'month': 'month',
+    'income_bracket': 'income', 'month': 'month', 'day_of_week': 'weekday',
     'ad_spend': 'spend', 'revenue': 'revenue', 'profit': 'profit',
     'ROAS': 'roas', 'CPA': 'cpa', 'conversion_rate': 'convrate', 'CTR': 'ctr',
     'clicks': 'clicks', 'impressions': 'impressions', 'conversions': 'conversions',

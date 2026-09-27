@@ -79,6 +79,10 @@ def _decide_in_session(question: str, filters: dict, explainer, session) -> Chat
         kind, reply = talk
         session.turns.append({"route": "CONVERSATION", "kind": kind})
         return ChatDecision("UNSUPPORTED" if kind == "personal" else "CONVERSATION", html.escape(reply), reason=kind)
+    if conversation.is_advice(question, session.plan):
+        d = _decide(conversation.advice_question(question, session.plan), False, filters, explainer)
+        session.turns.append({"route": d.route, "kind": "advice"})
+        return d  # recommendations don't replace the remembered analysis
     res = conversation.resolve(question, session)
     if res.kind == "clarify":
         d = ChatDecision(CLARIFY, html.escape(res.message), reason="follow_up_unclear")
@@ -95,8 +99,8 @@ def _decide_in_session(question: str, filters: dict, explainer, session) -> Chat
         if d.chart and not d.plan.visualization:
             d.plan.visualization = d.chart["type"]  # a chart was shown (e.g. "Show ..."): follow-ups keep it
         session.remember(d.plan, question, d.route, d.chart)
-    elif d.route == qr.Route.LLM_REQUIRED.value:
-        session.plan = None  # an explanation isn't a result "this" can chart or edit
+    # An explanation ("Why is Google Ads revenue higher?") leaves the remembered analysis in place:
+    # "the other platforms" / "this comparison" in the next message still refer to it.
     session.turns.append({"route": d.route, "kind": res.kind})
     return d
 
@@ -117,6 +121,8 @@ def _run_plan(plan, notes: list, filters: dict) -> ChatDecision:
 def _decide(question: str, has_history: bool, filters: dict, explainer) -> ChatDecision:
     if has_history and FOLLOW_UP_RE.search(question):
         return ChatDecision(CLARIFY, html.escape(ASK_IN_FULL), reason="follow_up")
+    if conversation.is_advice(question):
+        question = conversation.advice_question(question)  # grounded explanation path, one LLM call
     # Shapes the router has no tool plan for (several entities over time, several metrics, two
     # breakdowns, relationships, catalog-only fields): parsed from the schema catalog, 0 LLM calls.
     parsed = semantic_parser.plan_for(question)

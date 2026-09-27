@@ -138,6 +138,25 @@ MONTH_WORD_RE = _c(r"\b(january|february|march|april|june|july|august|september|
                    r"|jan|feb|mar|apr|jun|jul|aug|sept?|oct|nov|dec)\b|\b(?:about|for|in|of)\s+(may)\b")
 YEAR_WORD_RE = re.compile(r"\b(20\d{2})\b")
 
+# Requests for recommendations / actions ("How can I improve profit on the other platforms?"): answered
+# by the grounded explanation path with the conversation's analysis as context.
+ADVICE_RE = _c(r"\b(?:recommend\w*|suggest\w*|advice|advise|action plan|next steps?|what actions?"
+               r"|what (?:should|can|could) (?:we|i) do|what should (?:we|i)"
+               r"|(?:how|ways?) (?:can|could|should|do|would|to) (?:we |i )?(?:improve|increase|boost|grow|raise"
+               r"|optimi[sz]e|reduce|lower|fix|scale)|be improved|optimi[sz]e)\b")
+CONTEXT_REF_RE = _c(r"\b(?:this|that|these|those|it|them|other|others|previous|above|earlier|same|based on)\b")
+BUSINESS_RE = _c(r"\b(?:performance|results?|campaigns?|marketing|budget|comparison|optimi[sz]\w*|ads?|advertising"
+                 r"|efficiency|growth|sales)\b")
+
+
+def is_advice(question: str, plan=None) -> bool:
+    """A recommendation request about the campaign data (not "family advice")."""
+    if not ADVICE_RE.search(question):
+        return False
+    text = question.lower()
+    return bool(catalog.find_metrics(text) or catalog.find_dimensions(text) or BUSINESS_RE.search(text)
+                or qr._parse(question, qr._get_entity_index()).entities
+                or (plan is not None and CONTEXT_REF_RE.search(question)))
 NO_CONTEXT_CHART = ("What would you like me to chart? There's no earlier result in this conversation yet. "
                     "For example: \"Chart revenue by platform\" or \"Show monthly spend as a line chart\".")
 NO_CONTEXT = ("I don't have an earlier result in this conversation to refer to. What would you like to look at? "
@@ -194,6 +213,8 @@ def resolve(question: str, state: SessionState) -> Resolution:
     has_plan = state is not None and state.plan is not None
     if WHY_RE.match(text):
         return Resolution("why") if has_plan else Resolution("clarify", message=WHY_NO_CONTEXT)
+    if semantic_parser.plan_for(question) is not None:
+        return Resolution("none")  # a complete new analysis ("scatter plot of revenue and conversions"): not a follow-up
     f = qr._parse(question, qr._get_entity_index())
     metrics = [m for m in catalog.find_metrics(text) if m in qp.METRICS]
     named = {d for d, _ in f.entities}
@@ -343,6 +364,21 @@ def resolve(question: str, state: SessionState) -> Resolution:
     except qp.PlanError as e:
         return Resolution("clarify", message=e.public)
     return Resolution("plan", plan=checked, notes=notes)  # execute_plan adds checked.notes itself
+
+
+def advice_question(question: str, plan: qp.Plan = None) -> str:
+    """A recommendation request as a question for the grounded explanation path (one LLM call over
+    data-tool results). The remembered analysis is added as context when the question leans on it
+    ("the other platforms", "these results") or names no metric or breakdown of its own."""
+    q = question.strip()
+    if not qr.EXPLANATION_RE.search(q.lower()):
+        q = f"Recommend actions: {q}"
+    own = catalog.find_metrics(q.lower()) or catalog.find_dimensions(q.lower())
+    if plan is not None and (CONTEXT_REF_RE.search(question) or not own):
+        q = f"{q} Context: {describe(plan)}."
+    elif plan is None and not own:
+        q = f"{q} Context: revenue, spend and ROAS by platform."  # "What should we optimize?": a default evidence set
+    return q
 
 
 def describe(plan: qp.Plan) -> str:

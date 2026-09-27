@@ -57,6 +57,11 @@ Rules, no exceptions:
 6. Format: "What the data shows:" (the relevant supplied figures), then "Interpretation:"
    (hypotheses). At most about 150 words, plain business language, no preamble or sign-off,
    no generic marketing advice unless the question asks for recommendations.
+7. If the question asks for recommendations or actions, add "Recommended actions:" after
+   Interpretation: 2-4 short actions, each tied to a figure in "What the data shows" (e.g. test
+   shifting budget toward the higher-ROAS segment). Actions are things to test, not guaranteed
+   results: no new numbers, targets or forecasts, and no promised outcomes. The limit is then about
+   200 words.
 """
 
 

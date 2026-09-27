@@ -290,6 +290,7 @@ python test_charts.py
 python test_planner.py
 python test_conversation.py
 python test_general_analytics.py
+python test_production_fixes.py
 ```
 
 ## Adding a new askable dimension or metric

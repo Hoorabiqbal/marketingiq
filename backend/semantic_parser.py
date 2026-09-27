@@ -22,7 +22,8 @@ LEGACY_METRICS = {"revenue", "spend", "profit", "roas", "roi_pct", "cpa", "cpc",
 DEFAULT_METRICS = ["revenue", "spend", "roas"]
 _c = lambda p: re.compile(p, re.IGNORECASE)  # noqa: E731
 RELATION_RE = _c(r"\b(?:relationship|relation|relate[sd]?|correlat\w*|scatter|association|associated)\b")
-AXIS_RE = _c(r"\b(?:by|across|per|for each|between)\s+(?:the\s+)?(?:each\s+)?$")
+VERSUS_RE = _c(r"\b(?:vs\.?|versus|against)\b")
+AXIS_RE =_c(r"\b(?:by|across|per|for each|between)\s+(?:the\s+)?(?:each\s+)?$")
 CONTRIBUTION_RE = _c(r"\b(?:contribut\w*|composition|make[s]? up|share of|split of|mix)\b")
 
 
@@ -79,7 +80,9 @@ def plan_for(question: str):
     dims = [d for d in catalog.find_dimensions(text) if d not in entity_dims]
     same = [v for d, v in f.entities if f.entities and d == f.entities[0][0]]
     trend = bool(qr.TREND_RE.search(text))
-    relationship = bool(RELATION_RE.search(text)) and len(metrics) >= 2
+    relationship = len(metrics) >= 2 and (bool(RELATION_RE.search(text)) or (
+        # "Plot conversions vs revenue": two measures against each other, nothing else named
+        len(metrics) == 2 and VERSUS_RE.search(text) and not f.entities and not dims and not trend))
     catalog_only = (any(m not in LEGACY_METRICS for m in metrics)
                     or any(d in dt.EXTRA_DIMENSION_COLUMNS for d in dims))
     complex_shape = (relationship or len(dims) >= 2 or (len(same) >= 2 and trend)
