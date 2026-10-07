@@ -1,7 +1,7 @@
 """
-General analytics planner: questions the deterministic Query Router can't map.
+The analytics plan contract: what a plan may contain, how it is checked and how it runs.
 
-    question -> LLM Adapter .plan() (one Groq call, strict JSON-schema output)
+    plan (from the local Qwen planner, local_planner.py)
              -> validate_plan()   allowlists + real dataset values; nothing unvalidated runs
              -> existing data tools (get_totals, rank_dimension, compare_entities, filter_campaigns,
                 trend_over_time) on DuckDB
@@ -14,7 +14,6 @@ LLM-written text). Periods that the data covers only partly are reported, never 
 """
 import calendar
 import json
-import logging
 import math
 import re
 from dataclasses import dataclass, field
@@ -23,16 +22,15 @@ from datetime import date
 import chart_builder as cb
 import data_tools as dt
 import grounding
-import query_router as qr
+import analytics_executor as ax
 import schema_catalog as catalog
 
-logger = logging.getLogger("marketingiq.query_router")
 
 INTENTS = ["total", "breakdown", "trend", "period_comparison", "change_ranking", "compare_entities",
            "campaign_list", "relationship", "not_answerable"]
 METRICS = list(catalog.METRICS)                          # schema_catalog.py: the allowlist
 DIMENSIONS = list(dt.all_dimension_columns())
-FILTER_DIMENSIONS = list(qr.ENTITY_FILTER_KEYS)          # dimension -> dashboard filter key
+FILTER_DIMENSIONS = list(ax.ENTITY_FILTER_KEYS)          # dimension -> dashboard filter key
 CONDITION_METRICS = sorted(dt.NUMERIC_FIELD_COLUMNS)
 OPERATORS = [">", "<", ">=", "<="]
 GRAINS = ["none", "month", "year"]
@@ -43,7 +41,8 @@ MAX_ROWS = cb.MAX_CATEGORIES         # rows shown / charted
 MAX_LIMIT = 100                      # larger requested limits are rejected, 21-100 are capped
 MAX_PLAN_CHARS = 4000
 SAFE_VALUE_RE = re.compile(r"^[\w .,&+/()'%-]{1,60}$")
-FAILED = qr.PLANNER_HINT
+FAILED = ("I couldn't map that question safely to the available marketing data. Try specifying the "
+          "metric, time period, or comparison you'd like.")
 
 _NONE_SENTINELS = {"dimension": "none", "grain": "none", "visualization": "none", "reason": "none"}
 
@@ -76,7 +75,7 @@ SCHEMA = {
 }
 CORE_FIELDS = set(SCHEMA["required"])
 EXTENDED_FIELDS = {"dimension2", "exclude"}   # optional in a plan (older plans have 13 fields)
-SCHEMA["required"] = SCHEMA["required"] + sorted(EXTENDED_FIELDS)  # strict mode: Groq always sends them
+SCHEMA["required"] = SCHEMA["required"] + sorted(EXTENDED_FIELDS)  # a canonical plan always has every field
 
 LABELS = cb.LABELS
 
@@ -133,40 +132,6 @@ def _dataset():
         start, end = (date.fromisoformat(d) for d in fields["date_range"])
         _facts = {"values": values, "start": start, "end": end}
     return _facts
-
-
-def system_prompt() -> str:
-    facts = _dataset()
-    dims = "\n".join(f"- {d}: {', '.join(sorted(facts['values'][d].values()))}" if d in facts["values"]
-                     else f"- {d} (many values; breakdowns only)" for d in DIMENSIONS)
-    return f"""You translate one question about the MarketingIQ advertising dataset into a JSON analytics plan.
-You never answer the question and never write numbers from the data: the backend computes every figure.
-
-Dataset: advertising campaigns with start dates {facts['start']} to {facts['end']}.
-{catalog.prompt_text()}
-"Performance" with no metric means metrics revenue, spend, roas. A metric or field not listed:
-intent not_answerable, reason unknown_metric (or unknown_dimension).
-Intents:
-- total: one figure for a metric, optionally filtered or for a period.
-- breakdown: a metric by one dimension ("revenue by platform", "which platform had the highest ROAS").
-- trend: a metric over time; grain month (default) or year.
-- period_comparison: the same calendar month(s) compared across years (January = months [1]; years []
-  means every year in the data), or whole years compared (grain year, months []). Use it for "is
-  January revenue increasing over time", "year over year", "across years", "2024 vs 2025".
-- change_ranking: which value of a dimension changed or improved the most over time.
-- compare_entities: two or more named values of one dimension (entities: exact values).
-- campaign_list: individual campaigns, e.g. conditions [{{"metric": "spend", "operator": ">", "value": 10000}}].
-- relationship: how two metrics move together (metrics [x, y]); per campaign, or per value of a dimension.
-Up to 3 metrics. dimension2 = a second breakdown shown as series ("conversions by device and platform":
-dimension device, dimension2 platform). With several entities over time use intent trend with entities.
-exclude = dimension values to leave out. Chart types: line, bar, grouped_bar, stacked_bar (parts of a
-whole), stacked_percent (100% shares), pie (one additive metric), scatter (relationship).
-- not_answerable: the question can't be expressed with these fields (set reason: unknown_metric,
-  unknown_dimension, ambiguous, unavailable_period or not_about_data).
-Fields: filters narrow the data (e.g. device Mobile, platform TikTok); years/months only when the
-question names them; order desc = highest / most improved first (none = default); limit = N of "top N",
-else 0; visualization = none unless the user explicitly asks for a chart or graph. Unused fields: [] or
-"none" or 0."""
 
 
 # ---------------------------------------------------------------------------
@@ -263,7 +228,7 @@ def validate_plan(text) -> Plan:
     for flt in raw["filters"]:
         _require(isinstance(flt, dict) and set(flt) == {"dimension", "value"}, "bad filter")
         _require(flt["dimension"] in FILTER_DIMENSIONS, "unknown filter dimension")
-        filters[qr.ENTITY_FILTER_KEYS[flt["dimension"]]] = _value_of(flt["dimension"], flt["value"])
+        filters[ax.ENTITY_FILTER_KEYS[flt["dimension"]]] = _value_of(flt["dimension"], flt["value"])
 
     facts = _dataset()
     months, years = raw["months"], raw["years"]
@@ -318,7 +283,7 @@ def validate_plan(text) -> Plan:
                 limit, viz, None if reason == "none" else reason, notes, dimension2, exclude)
 
 
-_FILTER_DIMENSION = {key: dim for dim, key in qr.ENTITY_FILTER_KEYS.items()}
+_FILTER_DIMENSION = {key: dim for dim, key in ax.ENTITY_FILTER_KEYS.items()}
 
 
 def plan_to_raw(plan: Plan) -> dict:
@@ -381,8 +346,7 @@ def direction(values: list) -> str:
 
 
 def _run(tool: str, filters: dict, **kwargs):
-    call = qr.ToolCall(tool, kwargs)
-    return qr._execute(call, filters)
+    return ax.run(tool, filters, **kwargs)
 
 
 def _period_filter(plan: Plan) -> dict:
@@ -655,6 +619,9 @@ def _change_ranking(plan, base):
 # Wording that asks for the same month compared across the years in the data.
 CROSS_YEAR_RE = re.compile(r"\bover (?:the )?years\b|\bacross (?:the )?years\b|\bfrom year to year\b"
                            r"|\bover time\b|\bovertime\b", re.IGNORECASE)
+# Year-grain wording (case-sensitive, as it always was in the former router module).
+YEAR_GRAIN_RE = re.compile(r"\byear[- ]over[- ]year\b|\byoy\b|\bacross (?:the )?years\b|\b(?:each|every|per|by) year\b"
+                           r"|\byearly\b|\bannual(?:ly)?\b")
 
 
 def normalize_cross_year(plan: Plan, question: str) -> Plan:
@@ -662,37 +629,6 @@ def normalize_cross_year(plan: Plan, question: str) -> Plan:
     over the years?"), means that month in every year: a period comparison. Planners sometimes
     return it as a month-only trend or total, which can't be run (which February?)."""
     if (plan.intent in ("trend", "total") and plan.months and not plan.years and not plan.entities
-            and not plan.dimension and (CROSS_YEAR_RE.search(question) or qr.YEAR_GRAIN_RE.search(question))):
+            and not plan.dimension and (CROSS_YEAR_RE.search(question) or YEAR_GRAIN_RE.search(question))):
         plan.intent, plan.grain = "period_comparison", "year"
     return plan
-
-
-def answer(question: str, filters: dict, adapter, previous: Plan = None) -> PlannedAnswer:
-    """One planning call at most, then data tools only. Never raises for LLM or plan problems.
-    `previous`: the conversation's last analysis, sent as its compact plan (never the transcript) so
-    references like "that" or "instead" can be resolved."""
-    if adapter is None or not getattr(adapter.provider, "configured", False):
-        return PlannedAnswer([FAILED], status="llm_error")
-    prompt = question
-    if previous is not None:
-        prompt = (f"Previous analysis in this conversation, as a plan (resolve words like this, that, same, "
-                  f"instead or it against it): {json.dumps(plan_to_raw(previous))}\nQuestion: {question}")
-    result = adapter.plan(prompt, system_prompt(), SCHEMA)
-    if result["status"] != "ok":
-        return PlannedAnswer([FAILED], status="llm_error")
-    try:
-        plan = validate_plan(result["text"])
-    except PlanError as e:
-        status = "not_answerable" if str(e).startswith("not answerable") else "invalid_plan"
-        logger.warning(json.dumps({"event": "plan_rejected", "status": status, "detail": str(e)[:80]}))
-        return PlannedAnswer([e.public], status=status)
-    if not cb.VIZ_RE.search(question):
-        plan.visualization = None  # a chart only when the user asked for one, whatever the plan says
-    normalize_cross_year(plan, question)
-    try:
-        out = execute_plan(plan, filters)
-    except PlanError as e:
-        return PlannedAnswer([e.public], status="invalid_plan", plan=plan)
-    logger.info(json.dumps({"event": "plan_executed", "intent": plan.intent, "metrics": plan.metrics,
-                            "dimension": plan.dimension, "status": out.status, "chart": bool(out.chart)}))
-    return out

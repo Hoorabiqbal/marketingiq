@@ -1,0 +1,476 @@
+{
+  "candidates_generated": 7308,
+  "rejected": 2286,
+  "rejection_reasons": {
+    "eval leakage (near_skeleton)": 1064,
+    "duplicate": 925,
+    "eval leakage (same_skeleton)": 231,
+    "eval leakage (normalized_duplicate)": 34,
+    "execute_plan raised KeyError": 28,
+    "eval leakage (near_duplicate)": 4
+  },
+  "rejection_samples": {
+    "duplicate": [
+      {
+        "question": "count all campaigns",
+        "previous": null,
+        "plan": {
+          "intent": "total",
+          "metrics": [
+            "campaign_count"
+          ]
+        }
+      },
+      {
+        "question": "count all campaigns",
+        "previous": null,
+        "plan": {
+          "intent": "total",
+          "metrics": [
+            "campaign_count"
+          ]
+        }
+      },
+      {
+        "question": "How many conversions have we racked up?",
+        "previous": null,
+        "plan": {
+          "intent": "total",
+          "metrics": [
+            "conversions"
+          ]
+        }
+      },
+      {
+        "question": "Report the aggregate CTR.",
+        "previous": null,
+        "plan": {
+          "intent": "total",
+          "metrics": [
+            "ctr"
+          ]
+        }
+      },
+      {
+        "question": "How many conversions have we racked up?",
+        "previous": null,
+        "plan": {
+          "intent": "total",
+          "metrics": [
+            "conversions"
+          ]
+        }
+      }
+    ],
+    "eval leakage (near_skeleton)": [
+      {
+        "question": "conversions and ROAS for everything",
+        "previous": null,
+        "plan": {
+          "intent": "total",
+          "metrics": [
+            "conversions",
+            "roas"
+          ]
+        }
+      },
+      {
+        "question": "cost per conversion and quality score for everything",
+        "previous": null,
+        "plan": {
+          "intent": "total",
+          "metrics": [
+            "cpa",
+            "quality_score"
+          ]
+        }
+      },
+      {
+        "question": "bounce rate and click through rate for everything",
+        "previous": null,
+        "plan": {
+          "intent": "total",
+          "metrics": [
+            "bounce_rate",
+            "ctr"
+          ]
+        }
+      },
+      {
+        "question": "conversion count and turnover for everything",
+        "previous": null,
+        "plan": {
+          "intent": "total",
+          "metrics": [
+            "conversions",
+            "revenue"
+          ]
+        }
+      },
+      {
+        "question": "return on ad spend and conversion rate for everything",
+        "previous": null,
+        "plan": {
+          "intent": "total",
+          "metrics": [
+            "roas",
+            "conversion_rate"
+          ]
+        }
+      }
+    ],
+    "eval leakage (same_skeleton)": [
+      {
+        "question": "revenues across audience interests",
+        "previous": null,
+        "plan": {
+          "intent": "breakdown",
+          "metrics": [
+            "revenue"
+          ],
+          "dimension": "audience_interest"
+        }
+      },
+      {
+        "question": "cost across audience interests",
+        "previous": null,
+        "plan": {
+          "intent": "breakdown",
+          "metrics": [
+            "spend"
+          ],
+          "dimension": "audience_interest"
+        }
+      },
+      {
+        "question": "CVR across operating systems",
+        "previous": null,
+        "plan": {
+          "intent": "breakdown",
+          "metrics": [
+            "conversion_rate"
+          ],
+          "dimension": "operating_system"
+        }
+      },
+      {
+        "question": "bounce rate across verticals",
+        "previous": null,
+        "plan": {
+          "intent": "breakdown",
+          "metrics": [
+            "bounce_rate"
+          ],
+          "dimension": "vertical"
+        }
+      },
+      {
+        "question": "spend across devices",
+        "previous": null,
+        "plan": {
+          "intent": "breakdown",
+          "metrics": [
+            "spend"
+          ],
+          "dimension": "device"
+        }
+      }
+    ],
+    "eval leakage (near_duplicate)": [
+      {
+        "question": "Which campaigns have the lowest profit?",
+        "previous": null,
+        "plan": {
+          "intent": "campaign_list",
+          "metrics": [
+            "profit"
+          ],
+          "order": "asc"
+        }
+      },
+      {
+        "question": "Which campaigns have the lowest profit?",
+        "previous": null,
+        "plan": {
+          "intent": "campaign_list",
+          "metrics": [
+            "profit"
+          ],
+          "order": "asc"
+        }
+      },
+      {
+        "question": "profit year by year",
+        "previous": null,
+        "plan": {
+          "intent": "trend",
+          "metrics": [
+            "profit"
+          ],
+          "grain": "year"
+        }
+      },
+      {
+        "question": "What was revenue back in March 2025?",
+        "previous": null,
+        "plan": {
+          "intent": "total",
+          "metrics": [
+            "revenue"
+          ],
+          "months": [
+            3
+          ],
+          "years": [
+            2025
+          ]
+        }
+      }
+    ],
+    "eval leakage (normalized_duplicate)": [
+      {
+        "question": "only 2025",
+        "previous": {
+          "intent": "total",
+          "metrics": [
+            "cpa"
+          ]
+        },
+        "plan": {
+          "intent": "total",
+          "metrics": [
+            "cpa"
+          ],
+          "years": [
+            2025
+          ]
+        }
+      },
+      {
+        "question": "only 2025",
+        "previous": {
+          "intent": "total",
+          "metrics": [
+            "clicks"
+          ],
+          "filters": [
+            {
+              "dimension": "creative_emotion",
+              "value": "Neutral"
+            }
+          ]
+        },
+        "plan": {
+          "intent": "total",
+          "metrics": [
+            "clicks"
+          ],
+          "filters": [
+            {
+              "dimension": "creative_emotion",
+              "value": "Neutral"
+            }
+          ],
+          "years": [
+            2025
+          ]
+        }
+      },
+      {
+        "question": "ONLY 2025",
+        "previous": {
+          "intent": "breakdown",
+          "metrics": [
+            "avg_session_duration"
+          ],
+          "dimension": "device"
+        },
+        "plan": {
+          "intent": "breakdown",
+          "metrics": [
+            "avg_session_duration"
+          ],
+          "dimension": "device",
+          "years": [
+            2025
+          ]
+        }
+      },
+      {
+        "question": "only 2025",
+        "previous": {
+          "intent": "breakdown",
+          "metrics": [
+            "profit"
+          ],
+          "dimension": "creative_format"
+        },
+        "plan": {
+          "intent": "breakdown",
+          "metrics": [
+            "profit"
+          ],
+          "dimension": "creative_format",
+          "years": [
+            2025
+          ]
+        }
+      },
+      {
+        "question": "only 2025",
+        "previous": {
+          "intent": "total",
+          "metrics": [
+            "spend"
+          ]
+        },
+        "plan": {
+          "intent": "total",
+          "metrics": [
+            "spend"
+          ],
+          "years": [
+            2025
+          ]
+        }
+      }
+    ],
+    "execute_plan raised KeyError": [
+      {
+        "question": "Which campaigns have clicks exceeding 100?",
+        "previous": null,
+        "plan": {
+          "intent": "campaign_list",
+          "metrics": [
+            "clicks"
+          ],
+          "conditions": [
+            {
+              "metric": "clicks",
+              "operator": ">",
+              "value": 100
+            }
+          ]
+        }
+      },
+      {
+        "question": "pull up campaigns showing clicks no less than 10",
+        "previous": null,
+        "plan": {
+          "intent": "campaign_list",
+          "metrics": [
+            "clicks"
+          ],
+          "conditions": [
+            {
+              "metric": "clicks",
+              "operator": ">=",
+              "value": 10
+            }
+          ]
+        }
+      },
+      {
+        "question": "Which campaigns have conversions at least 100?",
+        "previous": null,
+        "plan": {
+          "intent": "campaign_list",
+          "metrics": [
+            "conversions"
+          ],
+          "conditions": [
+            {
+              "metric": "conversions",
+              "operator": ">=",
+              "value": 100
+            }
+          ]
+        }
+      },
+      {
+        "question": "Which campaigns have conversion count above 100?",
+        "previous": null,
+        "plan": {
+          "intent": "campaign_list",
+          "metrics": [
+            "conversions"
+          ],
+          "conditions": [
+            {
+              "metric": "conversions",
+              "operator": ">",
+              "value": 100
+            }
+          ]
+        }
+      },
+      {
+        "question": "list campaigns where CTR came in exceeding 2 percent",
+        "previous": null,
+        "plan": {
+          "intent": "campaign_list",
+          "metrics": [
+            "ctr"
+          ],
+          "conditions": [
+            {
+              "metric": "ctr",
+              "operator": ">",
+              "value": 2
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "draws_not_applicable": 102,
+  "families_accepted": {
+    "tot": 330,
+    "totm": 60,
+    "perf": 40,
+    "brk": 360,
+    "rank": 170,
+    "brkm": 60,
+    "excl": 50,
+    "dim2": 70,
+    "clr": 200,
+    "clc": 150,
+    "ce": 300,
+    "cea": 60,
+    "trd": 190,
+    "trde": 70,
+    "trdy": 60,
+    "pcy": 70,
+    "pcm": 140,
+    "tott": 170,
+    "brkt": 70,
+    "cr": 110,
+    "rel": 240,
+    "viz": 320,
+    "flt": 250,
+    "fltb": 110,
+    "fltt": 80,
+    "fum": 70,
+    "fuf": 70,
+    "fuc": 55,
+    "fumo": 45,
+    "fuy": 25,
+    "fup": 45,
+    "fuma": 25,
+    "fut": 40,
+    "fuo": 30,
+    "fue": 35,
+    "fua": 35,
+    "fud": 45,
+    "fud2": 25,
+    "fuch": 50,
+    "gram": 150,
+    "amb": 110,
+    "um": 80,
+    "ud": 70,
+    "up": 40,
+    "off": 30,
+    "adv": 60
+  },
+  "known_backend_issue": "campaign_list sorted by a condition field outside chart_builder.CAMPAIGN_METRICS (ctr, clicks, conversions) can pass validate_plan() but raise in execute_plan(); 28 such generated examples were rejected by the execution check (see rejection_reasons)."
+}

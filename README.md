@@ -17,11 +17,10 @@ export), with a genuinely data-grounded AI Analyst on top and a premium glassmor
 **Dashboard (direct):** https://marketingiqp.netlify.app/dashboard.html
 **Backend API health check:** https://marketingiq-backend.onrender.com/api/health
 
-The backend runs on Render's free tier, which spins down after ~15 minutes of inactivity —
-if the AI Analyst is slow to respond the first time, that's it waking back up (~30–60 seconds),
-not a bug. AI explanations run on a free-tier LLM plan with a small per-minute budget: if
-several "why" questions arrive at once, the AI Analyst shows the figures with a
-"temporarily rate-limited" notice instead of an explanation — database answers are unaffected.
+The deployed backend on Render's free tier still runs the **previous** version (Query Router + a
+cloud LLM for explanations). This repository's backend is now fully local: a fine-tuned Qwen3-0.6B
+on a local llama-server plans every analytical question, so it needs that model server to run (see
+[`backend/README.md`](backend/README.md)). It has not been deployed.
 
 ---
 
@@ -48,9 +47,9 @@ MarketingIQ helps a marketing team answer the questions that actually drive budg
   cross-filter, combinable with the sidebar filters and removable via a chip UI — similar to
   drill-down filtering in tools like Power BI.
 - **AI Marketing Analyst** — ask questions in plain English; every figure is computed live
-  from the real dataset in DuckDB. Factual questions are answered directly from the data
-  with no LLM at all; "why" questions get an LLM explanation that is checked number by number
-  against the data before it is shown (see below).
+  from the real dataset in DuckDB. A small fine-tuned local model only turns the question into a
+  validated analytics plan; answers, "why" findings, recommendations and charts are computed
+  deterministically from the data (see below).
 - **Glassmorphism design system** — a 3-level frosted-glass surface hierarchy (standard /
   elevated / focused) across both a dark (midnight) and light (pearl) theme, with the
   preference synced between the landing page and dashboard.
@@ -66,10 +65,10 @@ MarketingIQ helps a marketing team answer the questions that actually drive budg
 |---|---|
 | Frontend | HTML, CSS, vanilla JavaScript (no framework) — inline SVG for all charts |
 | Data pipeline | Python, Pandas |
-| AI backend | FastAPI, DuckDB, a deterministic query router, Groq (`openai/gpt-oss-120b`) for explanations only, plus a numerical grounding validator |
+| AI backend | FastAPI, DuckDB, a fine-tuned Qwen3-0.6B (Q4_K_M GGUF on llama.cpp) as the only planner, `validate_plan()`, deterministic findings / recommendations / charts |
 | Data | A 10,000-row synthetic digital-advertising campaign dataset (41 columns) |
 
-No paid services are required to run this project — Groq's free plan is enough (see
+No paid services, cloud LLMs or API keys are required: the model runs locally on a CPU (see
 [`backend/README.md`](backend/README.md)).
 
 ## Architecture
@@ -87,18 +86,18 @@ site/index.html (landing page) ──► site/dashboard.html (the actual app)
                                      from the real data in data.js
         │
         ▼  (AI Analyst tab only)
-backend/main.py (FastAPI) ── Query Router (deterministic, no LLM)
-        ├── DIRECT_DATABASE ──► DuckDB (same CSV, live filters) ──► exact answer
-        ├── LLM_REQUIRED ─────► DuckDB ──► compact typed analysis ──► Groq
-        │                                   ──► grounding validator ──► safe answer
-        └── UNSUPPORTED / NEEDS_CLARIFICATION ──► what can be asked instead
+backend/main.py (FastAPI) ── local Qwen3-0.6B (llama-server): question ──► compact plan
+        ──► validate_plan() ──► DuckDB (same CSV, live filters)
+        ├── analysis ─────► deterministic answer + validated chart
+        ├── why / explain ─► deterministic findings
+        └── advice ───────► findings + rule-based recommendations
         ▼
 Answer returned to the chat UI
 ```
 
 `site/dashboard.html` (charts, filters, tables) is a fully static page — it works with the
-backend turned off. Only the **AI Analyst tab** needs the backend running, since it's the
-only feature that calls out to an LLM. `site/index.html` is a lightweight landing page that
+backend turned off. Only the **AI Analyst tab** needs the backend (and its local model server)
+running. `site/index.html` is a lightweight landing page that
 embeds a live, non-interactive preview of the real dashboard.
 
 ## The AI Analyst, in detail
@@ -108,24 +107,24 @@ how it avoids hallucination:
 
 1. The user's question and currently active dashboard filters (sidebar *and* chart-click
    cross-filters) are sent to the backend.
-2. A deterministic **Query Router** (rules, no LLM) maps the question onto a fixed set of
-   **data tools** (`get_totals`, `rank_dimension`, `compare_entities`, `filter_campaigns`,
-   `trend_over_time`, etc.), run in **DuckDB** with the user's filters applied.
-3. Factual questions ("total revenue", "which platform has the highest ROAS", "monthly
-   revenue") are answered straight from that result — no LLM is involved at all.
-4. "Why / explain" questions get a small, typed analysis (units, scopes, aggregates vs.
-   examples, what the data can and cannot establish) that is sent to **Groq** for a short
-   explanation. The LLM never sees the dataset and never chooses tools.
-5. Every explanation passes a deterministic **grounding validator**: each number must match
-   the supplied data with the right unit, metric, entity and month. An explanation with an
-   invented or mislabelled figure is never shown — the user gets a plain summary of the real
-   figures instead.
-6. Questions the data can't answer (fields that don't exist, judgement calls like
-   "underperforming", relative dates like "last month") get a clear message about what can be
-   asked, rather than a guess.
+2. A **fine-tuned Qwen3-0.6B**, running locally on llama.cpp, turns the question into a compact
+   **analytics plan**: metric, breakdown, filters, period, chart type. That is all it does. It never
+   sees the dataset, never writes SQL and never writes an answer or a number. For a follow-up
+   ("now profit"), it gets the previous validated plan, not the chat transcript.
+3. **`validate_plan()`** checks every plan against allowlists and the dataset's real values. A
+   malformed or invalid plan never reaches the data.
+4. The plan runs on a fixed set of **data tools** in **DuckDB**, with the user's filters applied.
+   The answer text and charts are built deterministically from the results.
+5. "Why / explain" questions get **deterministic findings** computed from the results: highest
+   and lowest, gaps, change over time, correlation, loss-making counts. Advice questions add
+   **rule-based recommendations** tied to those findings (budget follows ROAS; loss-making means
+   profit below $0). No model writes prose, so no figure can be invented.
+6. Questions the data can't answer (fields that don't exist, such as browsers or countries) get a
+   clear message about what is available, rather than a guess.
 
-Adding a new askable dimension or metric is a one-line change in `backend/data_tools.py` —
-not a new question/answer branch.
+Adding a new dimension or metric to the data layer is a small change in `backend/data_tools.py` /
+`schema_catalog.py`. For the model to plan questions about it, its training data would need the
+new field (`experiments/tiny_model/`).
 
 ## Dataset
 
@@ -159,16 +158,18 @@ marketingiq/
 │   ├── dashboard.html           # the actual analytics app
 │   └── data.js
 ├── backend/                     # only needed for the AI Analyst tab
-│   ├── main.py                  # FastAPI app: /api/chat, /api/query, /api/health
-│   ├── query_router.py          # deterministic question routing (no LLM)
+│   ├── main.py                  # FastAPI app: /api/chat, /api/health
+│   ├── analyst.py               # the answer path: plan, validate, DuckDB, answer / findings / advice
+│   ├── local_planner.py         # the local Qwen planner (persistent llama-server)
+│   ├── query_planner.py         # plan contract: validate_plan(), execute_plan()
+│   ├── findings_engine.py       # deterministic findings
+│   ├── recommendation_engine.py # rule-based recommendations
 │   ├── data_tools.py            # analytics tools over the DuckDB data layer
-│   ├── llm_adapter.py           # provider-independent explanation layer
-│   ├── groq_provider.py         # Groq, the only LLM provider
-│   ├── grounding.py             # typed LLM context + numerical-claim validator
 │   ├── requirements.txt
-│   ├── test_app.py
+│   ├── test_*.py
 │   ├── .env.example
 │   └── README.md
+├── experiments/tiny_model/      # how the local planner was built, evaluated and exported
 └── docs/
 ```
 
@@ -192,7 +193,7 @@ even with the backend running — see Option B for the fix, serving it over a lo
    python build_data.py
    ```
 3. **Set up the AI backend** — see [`backend/README.md`](backend/README.md) for full detail
-   (installing dependencies, getting a Groq API key, running the server).
+   (installing dependencies, starting the local model server, running the API).
 4. **Serve the frontend** over a local address (not `file://`):
    ```
    cd site
@@ -203,16 +204,16 @@ even with the backend running — see Option B for the fix, serving it over a lo
 
 ## Environment variables
 
-All secrets live in `backend/.env` (never committed — see `.gitignore`). The only required one
-is `GROQ_API_KEY`; see `backend/.env.example` for the optional settings.
+No secrets are needed. Optional settings (model server URL, CORS, data backend) are listed in
+`backend/.env.example`; a local `backend/.env` is never committed (see `.gitignore`).
 
 ## Testing
 
-- `backend/test_*.py` — automated tests of the router, the DuckDB data layer (checked
-  against the original Pandas results), the chat endpoint, the Groq provider (rate limits,
-  timeouts, retries, errors), the grounding validator (including real bad answers recorded
-  from earlier LLM benchmarks) and cold-start concurrency. Groq is replaced by a fake HTTP
-  transport, so the suite needs no API key and uses no quota.
+- `backend/test_*.py` — automated tests of the chat path (one planning call at most, the
+  validation gate, findings, recommendation direction, memory, charts), the plan contract
+  (including malicious plans), the DuckDB data layer (checked against the original Pandas results)
+  and the grounding validator. The model is replaced by a fake local llama-server, so the suite
+  needs no GGUF.
 - Frontend behavior (zero-match filters, search edge cases, sort correctness, chart
   cross-filtering, responsive navigation, theme persistence) was verified with an automated
   headless-browser test pass during development — 60+ test cases across multiple suites.
@@ -220,11 +221,12 @@ is `GROQ_API_KEY`; see `backend/.env.example` for the optional settings.
 ## Limitations
 
 - The dataset is synthetic/public, not live production ad-platform data.
-- AI explanations use Groq's free plan (about 8,000 tokens a minute, roughly a few
-  explanations per minute for the whole app). Beyond that, users see the figures with a
-  "temporarily rate-limited" notice. Factual questions never use the LLM and are unaffected.
-- The AI Analyst answers each question on its own: follow-ups that depend on an earlier
-  answer ("what about TikTok?") are asked to be rephrased as a full question.
+- The AI Analyst needs the local model server; without it, analytical questions answer that
+  the model is unavailable. Explanations and recommendations are deterministic summaries of the
+  data, not free-form analysis: they say what happened, never why.
+- The 0.6B planner occasionally misreads a question. Invalid plans are always refused, but a
+  valid-yet-wrong plan answers a different question correctly (about 90% exact plans on the
+  frozen evaluation set).
 - Filtering, charts, and the campaign ledger operate on the full 10,000-row dataset, but the
   campaign ledger table displays the top 100 matching rows at a time for performance; the KPI
   totals above it reflect the complete filtered set regardless.

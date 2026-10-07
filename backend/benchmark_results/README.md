@@ -1,5 +1,7 @@
 # LLM provider benchmark results (historical)
 
+*Historical records only. The benchmark script and every cloud provider were removed; the app is now 100% local. The files remain as regression fixtures for `test_grounding.py`.*
+
 Raw output of `benchmark_llm_providers.py` from the provider evaluation in Phases 6–7.
 Every run used the same 10 `LLM_REQUIRED` questions and the same DuckDB-computed compact
 analysis for each question (identical `analysis_sha256` / `analysis_bytes` across runs).

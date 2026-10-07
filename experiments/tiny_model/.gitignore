@@ -1,0 +1,6 @@
+artifacts/
+results/
+*.gguf
+export/
+merged_16bit/
+*.safetensors

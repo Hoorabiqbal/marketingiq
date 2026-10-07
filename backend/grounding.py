@@ -1,13 +1,16 @@
 """
-MarketingIQ grounding layer: the boundary between the analytics engine and any LLM provider.
+MarketingIQ grounding layer: metric units, formatting, and a validator for model-written text.
 
-    router analysis (raw data_tools results)
-        -> build_llm_context()      typed, unit-aware, compact context  -> provider (Groq)
-    provider text
-        -> validate_explanation()   deterministic check of every number in the answer
-        -> safe_summary()           deterministic answer used when the check fails
+The running app uses fmt() and the metric units / LOWER_IS_BETTER here (answers, findings). No model
+writes answer text any more (findings and recommendations are deterministic), so the text validator
+below is not on the request path; it is kept as a tested library for checking any generated text:
 
-Provider-independent: every provider gets the same context and its answer gets the same checks.
+    data_tools results
+        -> build_llm_context()      typed, unit-aware, compact context
+    generated text
+        -> validate_explanation()   deterministic check of every number in the text
+        -> safe_summary()           deterministic text used when the check fails
+
 Metric definitions below DESCRIBE what data_tools.py computes; nothing here computes a metric.
 
 Validator limits (by design, see README): it checks numbers written with digits, not number words
@@ -117,6 +120,26 @@ def _section(item: dict) -> dict:
     return {"type": "other", "tool": tool, "data": res}
 
 
+def _campaign_sections(item: dict) -> list:
+    """get_campaign: the campaign itself, then its platform and all campaigns as benchmarks, in the
+    section types the fact collection and validation already understand."""
+    res = item.get("result") or {}
+    if not res.get("found"):
+        return [{"type": "other", "tool": "get_campaign", "data": {"not_in_dataset": res.get("campaign_id")}}]
+    c = res["campaign"]
+    out = [{"type": "comparison", "dimension": "campaign", "entity_count": 1,
+            "meaning": "one individual campaign, identified by its ID (the dataset has no campaign names)",
+            "outcome": res["outcome"], "outcome_rule": f"unsuccessful = {res['outcome_rule']}",
+            "entities": [_named_row({"name": c["id"], **{k: v for k, v in c.items() if k != "id"}})]}]
+    if res.get("platform_benchmark"):
+        out.append({"type": "comparison", "dimension": "platform", "entity_count": 1,
+                    "meaning": "benchmark: all campaigns on this campaign's platform",
+                    "entities": [_named_row(res["platform_benchmark"])]})
+    if res.get("all_campaigns"):
+        out.append({"type": "aggregate", "of": "all campaigns (benchmark)", "metrics": res["all_campaigns"]})
+    return out
+
+
 def _active_filters(filters: dict) -> dict:
     """Only filters that actually narrow the data (the dashboard also sends "All Platforms" etc.)."""
     out = {}
@@ -162,6 +185,9 @@ def build_llm_context(question: str, analysis: dict) -> dict:
     sections = []
     for item in analysis.get("results") or []:
         try:
+            if isinstance(item, dict) and item.get("tool") == "get_campaign":
+                sections.extend(_campaign_sections(item))
+                continue
             sections.append(_section(item))
         except (KeyError, TypeError, AttributeError, IndexError):
             sections.append({"type": "other", "tool": item.get("tool") if isinstance(item, dict) else None,

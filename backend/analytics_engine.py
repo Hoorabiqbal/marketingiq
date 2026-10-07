@@ -15,7 +15,7 @@ from dataclasses import dataclass
 import chart_builder as cb
 import data_tools as dt
 import query_planner as qp
-import query_router as qr
+import analytics_executor as ax
 import schema_catalog as catalog
 
 MAX_CHARTS = 3
@@ -143,7 +143,7 @@ def _breakdown(plan, base):
 def _cross(plan, base):
     dims = catalog.dimensions()
     d1, d2 = plan.dimension, plan.dimension2
-    key2 = qr.ENTITY_FILTER_KEYS[d2]
+    key2 = ax.ENTITY_FILTER_KEYS[d2]
     restricted = bool(plan.entities) and all(e in dims[d2].values for e in plan.entities)
     values2 = [v for v in (plan.entities if restricted else dims[d2].values) if v not in plan.exclude]
     per_value = {v: {r["group"]: r for r in dt.metric_table({**base, key2: v}, group_by=d1)} for v in values2}
@@ -181,13 +181,13 @@ def _trend(plan, base):
     entities, notes = list(plan.entities), []
     if not entities and plan.dimension:
         values = [v for v in dims[plan.dimension].values if v not in plan.exclude]
-        if len(values) <= MAX_TREND_SERIES and plan.dimension in qr.ENTITY_FILTER_KEYS:
+        if len(values) <= MAX_TREND_SERIES and plan.dimension in ax.ENTITY_FILTER_KEYS:
             entities = values
         else:
             notes.append(f"Too many {_dim_label(plan.dimension)} values for one chart; showing the overall trend.")
     entities = [e for e in entities if e not in plan.exclude]
     if entities:
-        key = qr.ENTITY_FILTER_KEYS[plan.dimension]
+        key = ax.ENTITY_FILTER_KEYS[plan.dimension]
         tables_by = {e: {r["group"]: r for r in dt.metric_table({**base, key: e}, group_by="month")} for e in entities}
     else:
         tables_by = {None: {r["group"]: r for r in dt.metric_table(base, group_by="month")}}

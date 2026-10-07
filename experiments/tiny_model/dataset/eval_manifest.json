@@ -1,0 +1,88 @@
+{
+  "version": "eval-v1",
+  "file": "eval_frozen.jsonl",
+  "frozen_on": "2026-09-29",
+  "sha256": "51966831e505de8ac59fec49dad53cb1c2d4daa8744fa46d75794be831c7f2b1",
+  "examples": 429,
+  "sources": {
+    "hand": 389,
+    "template": 40
+  },
+  "categories": {
+    "total": 35,
+    "breakdown": 47,
+    "campaign_list": 31,
+    "comparison": 35,
+    "time": 57,
+    "relationship": 23,
+    "visualization": 30,
+    "filters": 34,
+    "ambiguous": 14,
+    "unsupported": 27,
+    "adversarial": 12,
+    "follow_up": 44,
+    "breakdown_template": 40
+  },
+  "intents": {
+    "total": 78,
+    "breakdown": 134,
+    "campaign_list": 36,
+    "compare_entities": 36,
+    "trend": 41,
+    "period_comparison": 21,
+    "change_ranking": 8,
+    "relationship": 26,
+    "not_answerable": 49
+  },
+  "not_answerable_reasons": {
+    "ambiguous": 14,
+    "unknown_metric": 13,
+    "unknown_dimension": 9,
+    "unavailable_period": 3,
+    "not_about_data": 10
+  },
+  "styles": {
+    "professional": 8,
+    "casual": 29,
+    "short": 78,
+    "plain": 255,
+    "grammar": 5,
+    "conversational": 6,
+    "typo": 5,
+    "caps": 3,
+    "template": 40
+  },
+  "with_previous": 44,
+  "with_visualization": 36,
+  "template_ids": [
+    "eval-hand-adversarial",
+    "eval-hand-ambiguous",
+    "eval-hand-breakdown",
+    "eval-hand-campaign_list",
+    "eval-hand-comparison",
+    "eval-hand-filters",
+    "eval-hand-follow_up",
+    "eval-hand-relationship",
+    "eval-hand-time",
+    "eval-hand-total",
+    "eval-hand-unsupported",
+    "eval-hand-visualization",
+    "eval-tpl-01",
+    "eval-tpl-02",
+    "eval-tpl-03",
+    "eval-tpl-04"
+  ],
+  "template_frames": {
+    "eval-tpl-01": "{m} by {dp}",
+    "eval-tpl-02": "What is the {m} for each {ds}?",
+    "eval-tpl-03": "Show me {m} broken down by {ds}",
+    "eval-tpl-04": "How does {m} compare across {dp}?"
+  },
+  "validation": {
+    "validate_plan": "all gold plans pass (not_answerable refused with its reason)",
+    "execute_plan": "all answerable gold plans return status ok on the local data",
+    "duplicates_and_leakage": "none (validate_dataset.py against seed_examples.jsonl)"
+  },
+  "labels": "hand-written against query_planner.SCHEMA; no LLM (Groq or other) produced or checked labels",
+  "rule": "Frozen. Do not edit; training data must not reuse these questions, template_ids or frames."
+}

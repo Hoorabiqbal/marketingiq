@@ -1,0 +1,3 @@
+# Colab / Kaggle GPU only (training + GGUF export). Not installed in backend/ and not needed on the laptop.
+# Follow the current install cell of Unsloth's official notebooks; it pins compatible torch/trl/transformers.
+unsloth

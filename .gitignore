@@ -12,3 +12,8 @@ Thumbs.db
 backend/index.test.html
 backend/node_modules/
 backend/.tmp/
+*.log
+*.gguf
+.pytest_cache/
+.coverage
+htmlcov/

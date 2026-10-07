@@ -2,15 +2,15 @@
 Schema catalog: what the AI Analyst may ask of the campaign dataset, built from the real columns
 (data/tech_advertising_campaigns_dataset.csv, as loaded by data_tools) and the data layer.
 
-It is the single allowlist for the analytics planner and the deterministic parser: every metric,
-dimension, filter and chart role an analytical plan may name comes from here, with units,
-aggregation rules and formulas. Its compact text form is what the Groq planner sees; rows never are.
+It is the single allowlist for analytical plans: every metric, dimension, filter and chart role a
+plan may name comes from here, with units, aggregation rules and formulas. The conversation helpers
+use its aliases to notice what a message mentions; no model ever sees campaign rows.
 """
 import re
 from dataclasses import dataclass, field
 
 import data_tools as dt
-import query_router as qr
+import analytics_executor as ax
 
 
 @dataclass(frozen=True)
@@ -95,8 +95,6 @@ _DIM_ALIASES = {
 TEMPORAL = {"month": "calendar month of start_date (YYYY-MM)", "year": "calendar year of start_date",
             "quarter": "quarter number of start_date (1-4, a dimension)",
             "day_of_week": "weekday of start_date (a dimension)"}
-UNSUPPORTED = ("country", "region", "city", "location", "product", "sku", "customer lifetime value", "churn",
-               "customer name", "email")
 
 _catalog = None
 
@@ -112,7 +110,7 @@ def dimensions() -> dict:
         for name, col in columns.items():
             values = sorted(str(v) for v in profile["distinct"][col])
             label = name.replace("_", " ").title()
-            out[name] = Dimension(name, label, col, _DIM_ALIASES.get(name, ()), name in qr.ENTITY_FILTER_KEYS,
+            out[name] = Dimension(name, label, col, _DIM_ALIASES.get(name, ()), name in ax.ENTITY_FILTER_KEYS,
                                   tuple(values))
         _catalog = out
     return _catalog
@@ -164,15 +162,3 @@ def find_dimensions(text: str) -> list:
         scratch = pattern.sub(lambda m: " " * len(m.group(0)), scratch)
     return list(dict.fromkeys(n for _, n in sorted(found)))
 
-
-def prompt_text() -> str:
-    """The compact catalog the Groq planner receives."""
-    dims = dimensions()
-    metric_lines = []
-    for m in METRICS.values():
-        how = {"sum": "summed", "count": "counted", "ratio": f"= {m.formula}", "avg": "average per campaign"}[m.aggregation]
-        metric_lines.append(f"- {m.name} ({m.unit}, {how}; aliases: {', '.join(m.aliases[:4]) or '-'})")
-    dim_lines = [f"- {d.name}{'' if d.filterable else ' (breakdown only)'}: {', '.join(d.values)}" for d in dims.values()]
-    return ("Metrics:\n" + "\n".join(metric_lines) + "\nDimensions and their exact values:\n" + "\n".join(dim_lines)
-            + "\nTime: month (YYYY-MM) and year of the campaign start date."
-            + "\nNot in the dataset: " + ", ".join(UNSUPPORTED) + ".")

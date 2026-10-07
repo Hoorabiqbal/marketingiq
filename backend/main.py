@@ -1,16 +1,18 @@
 """
-MarketingIQ AI Analyst backend.
+MarketingIQ AI Analyst backend: 100% local, no cloud LLM, no API key.
 
-    question (+ active dashboard filters)
-      -> Query Router (query_router.py)
-           DIRECT_DATABASE -> DuckDB -> exact answer (no LLM)
-           LLM_REQUIRED    -> DuckDB -> compact typed analysis -> Groq (llm_adapter.py,
-                              groq_provider.py) -> grounding validator (grounding.py) -> safe answer
-           UNSUPPORTED / NEEDS_CLARIFICATION -> the router's message (no LLM)
-    explicit chart request -> DuckDB -> validated chart spec (chart_builder.py, no LLM)
+    question (+ active dashboard filters, + the session's remembered validated plan for follow-ups)
+      -> analyst.py
+           small talk / exact campaign ID .............. deterministic, no model call
+           everything else ............................. fine-tuned Qwen3-0.6B on a local llama-server
+                                                          (local_planner.py): ONE call -> compact plan
+                                                          -> validate_plan() -> DuckDB
+              analysis      deterministic answer + validated chart (query_planner, chart_builder)
+              explanation   deterministic findings (findings_engine)
+              advice        findings + rule-based recommendations (recommendation_engine)
 
-Groq is the only LLM provider; there is no provider selection and no failover. The LLM never
-chooses tools or sees the dataset: it only explains the analysis it is handed.
+The model only plans; DuckDB computes every number. The llama-server runs separately and stays up
+(experiments/tiny_model/PHASE7_LOCAL_QWEN.md); this app never starts it or loads the model.
 
 Run locally:
     uvicorn main:app --reload --port 8000
@@ -20,24 +22,22 @@ import os
 import time
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
-import chat_routing
+import analyst
+import analytics_executor as ax
 import conversation
 import data_tools as dt
-import llm_providers
-import query_router as qr
-from llm_adapter import LLMAdapter, ProviderSlots
+import local_planner
 
 APP_DIR = Path(__file__).parent
 load_dotenv(APP_DIR / ".env")
 
 CSV_PATH = os.getenv("MARKETINGIQ_CSV_PATH", str(APP_DIR / ".." / "data" / "tech_advertising_campaigns_dataset.csv"))
 dt.load_data(CSV_PATH)
-qr.warm_up()  # router entity index, built once before the first request
 
 app = FastAPI(title="MarketingIQ AI Analyst")
 
@@ -55,13 +55,10 @@ app.add_middleware(
     allow_headers=["Content-Type"],
 )
 
-# Explanation layer for LLM_REQUIRED questions (/api/query and /api/chat): Groq only.
-# At most LLM_MAX_CONCURRENT requests wait on the LLM at once, so slow provider calls can never
-# occupy all of the server's worker threads (40 by default); extra ones get an immediate "busy".
-LLM_MAX_CONCURRENT = int(os.getenv("LLM_MAX_CONCURRENT", "20"))
-provider_slots = ProviderSlots(LLM_MAX_CONCURRENT)
-llm_adapter = LLMAdapter(llm_providers.build_provider(), timeout_s=llm_providers.timeout_seconds(),
-                         slots=provider_slots)
+# The local planner: one persistent llama-server (MARKETINGIQ_LLAMA_URL), never started per request.
+analyst.planner = local_planner.LocalPlanner.from_env()
+if not analyst.planner.healthy():
+    ax.logger.warning(json.dumps({"event": "local_model_unreachable", "url": analyst.planner.url}))
 
 
 class ChatMessage(BaseModel):
@@ -83,36 +80,19 @@ sessions = conversation.SessionStore()
 
 @app.post("/api/chat")
 def chat(req: ChatRequest):
-    """The dashboard's AI Analyst. `messages` is the conversation; the latest user message is
-    answered through the Query Router (earlier turns only mark follow-ups). `chart` is a validated
-    chart spec (data + metadata, never code) or null."""
+    """The dashboard's AI Analyst. `messages` is the conversation; the latest user message is answered
+    (earlier turns only mark follow-ups). `chart` is a validated chart spec (data + metadata, never
+    code) or null."""
     started = time.perf_counter()
     last = req.messages[-1] if req.messages else None
     question = last.content if last is not None and last.role == "user" else ""
-    decision = chat_routing.decide(question, len(req.messages) > 1, req.filters or {}, llm_adapter,
-                                   session=sessions.get(req.session_id))
-    qr.logger.info(json.dumps({"event": "chat_answered", "route": decision.route, "reason": decision.reason,
+    reply = analyst.answer(question, len(req.messages) > 1, req.filters or {}, session=sessions.get(req.session_id))
+    ax.logger.info(json.dumps({"event": "chat_answered", "route": reply.route, "reason": reply.reason,
                                "elapsed_ms": round((time.perf_counter() - started) * 1000, 2)}))
-    body = {"answer": decision.answer, "route": decision.route, "chart": decision.chart}
-    if decision.charts:  # several charts (e.g. metrics in different units); `chart` stays the first
-        body["charts"] = decision.charts
+    body = {"answer": reply.answer, "route": reply.route, "chart": reply.chart}
+    if reply.charts:  # several charts (e.g. metrics in different units); `chart` stays the first
+        body["charts"] = reply.charts
     return body
-
-
-class QueryRequest(BaseModel):
-    query: str = Field(max_length=qr.MAX_QUERY_LENGTH)
-    filters: dict[str, str | bool | None] = {}
-
-
-@app.post("/api/query")
-def query(req: QueryRequest):
-    """Query Router (query_router.py) as JSON: DIRECT_DATABASE questions are answered by a data
-    tool with no LLM call; LLM_REQUIRED questions return the compact analysis plus the
-    grounding-validated explanation (or a structured `llm` error)."""
-    try:
-        return qr.route_query(req.query, req.filters, explainer=llm_adapter)
-    except qr.QueryRouterError as e:
-        raise HTTPException(status_code=e.status_code, detail=e.public_message)
 
 
 @app.get("/api/health")
@@ -121,8 +101,7 @@ def health():
         "status": "ok",
         "campaigns_loaded": dt.row_count(),
         "data_backend": dt.data_backend_name(),
-        "llm_provider": llm_adapter.provider.name,
-        "llm_model": llm_adapter.provider.model,
-        # Whether the Groq key is set (never the key itself).
-        "llm_configured": llm_adapter.provider.configured,
+        "planner": "local_qwen",
+        "planner_model": analyst.planner.model,
+        "local_model_reachable": analyst.planner.healthy(),
     }

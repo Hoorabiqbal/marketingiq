@@ -79,6 +79,12 @@ NUMERIC_FIELD_COLUMNS = {"spend": "ad_spend", "revenue": "revenue", "profit": "p
                          "clicks": "clicks", "conversions": "conversions"}
 CONDITION_OPERATORS = {">", "<", ">=", "<=", "=="}
 MONTH_KEY_RE = re.compile(r"^\d{4}-(?:0[1-9]|1[0-2])$")
+# Campaigns are identified only by campaign_id ("CAMP_00591"): the dataset has no campaign names.
+CAMPAIGN_ID_RE = re.compile(r"^CAMP_\d{5}$")
+# Per-campaign measures returned by get_campaign (summable ones and the dataset's own per-row ratios).
+CAMPAIGN_METRIC_COLUMNS = {m: col for m, col in CAMPAIGN_FIELD_COLUMNS.items() if m not in AVG_FIELD_COLUMNS}
+# The dashboard's rule (site/dashboard.html, Unsuccessful Campaigns table): a campaign that lost money.
+UNSUCCESSFUL_RULE = "profit below $0"
 
 # Creative-age buckets for get_creative_fatigue: right-closed intervals (0,15], (15,30], ...
 CREATIVE_AGE_EDGES = [0, 15, 30, 45, 60, 90]
@@ -412,6 +418,35 @@ def filter_campaigns(conditions: list, sort_by: str = "profit", order: str = "as
     return out
 
 
+def get_campaign(campaign_id: str, benchmarks: bool = False) -> dict:
+    """One campaign by its ID, with its outcome under the dashboard's rule (unsuccessful = profit
+    below 0). Not narrowed by the dashboard filters: an ID names exactly one campaign.
+    benchmarks: also the totals of its platform and of all campaigns (same formulas as get_totals),
+    so an explanation can compare the campaign with its peers."""
+    cid = str(campaign_id).strip().upper()
+    if not CAMPAIGN_ID_RE.match(cid):
+        return {"campaign_id": cid, "found": False}
+    repo = get_repository()
+    attrs = {d: col for d, col in DIMENSION_COLUMNS.items() if repo.has_column(col)}
+    cols = ["campaign_id", *attrs.values(), "month", *CAMPAIGN_METRIC_COLUMNS.values()]
+    _, rows = repo.find_campaigns([("campaign_id", "=", cid)], "profit", True, 1, cols)
+    if not rows:
+        return {"campaign_id": cid, "found": False}
+    row = rows[0]
+    campaign = {"id": cid, **{d: (bool(row[col]) if d == "retargeting" else str(row[col])) for d, col in attrs.items()},
+                "month": str(row["month"])}
+    for m, col in CAMPAIGN_METRIC_COLUMNS.items():
+        v = row[col]
+        campaign[m] = int(v) if m in ("clicks", "conversions", "impressions") else _round2(float(v))
+    out = {"campaign_id": cid, "found": True, "campaign": campaign,
+           "outcome": "unsuccessful" if campaign["profit"] < 0 else "profitable", "outcome_rule": UNSUCCESSFUL_RULE}
+    if benchmarks:
+        out["platform_benchmark"] = {"name": campaign["platform"],
+                                     **_metrics_from_sums(repo.aggregate([("platform", "=", campaign["platform"])])[0])}
+        out["all_campaigns"] = _metrics_from_sums(repo.aggregate([])[0])
+    return out
+
+
 def _round2(value):
     # Same rounding as DataFrame.round(2) (numpy half-to-even on the float).
     return float(np.round(value, 2)) if isinstance(value, (float, np.floating)) else value
@@ -442,6 +477,7 @@ TOOL_REGISTRY = {
     "percentage_share": percentage_share,
     "get_numeric_field_stats": get_numeric_field_stats,
     "filter_campaigns": filter_campaigns,
+    "get_campaign": get_campaign,
     "trend_over_time": trend_over_time,
     "get_creative_fatigue": get_creative_fatigue,
     "list_available_fields": list_available_fields,

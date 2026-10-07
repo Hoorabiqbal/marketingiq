@@ -1,0 +1,275 @@
+{
+ "Why is TikTok performing better than other platforms?": {
+  "focus": [],
+  "calls": [
+   {
+    "tool": "rank_dimension",
+    "input": {
+     "dimension": "platform",
+     "metric": "roas",
+     "order": "desc",
+     "limit": 10
+    },
+    "period": null,
+    "extra": null
+   },
+   {
+    "tool": "get_totals",
+    "input": {},
+    "period": null,
+    "extra": null
+   }
+  ]
+ },
+ "What might explain the ROAS difference between platforms?": {
+  "focus": [
+   "roas"
+  ],
+  "calls": [
+   {
+    "tool": "rank_dimension",
+    "input": {
+     "dimension": "platform",
+     "metric": "roas",
+     "order": "desc",
+     "limit": 10
+    },
+    "period": null,
+    "extra": null
+   },
+   {
+    "tool": "get_totals",
+    "input": {},
+    "period": null,
+    "extra": null
+   }
+  ]
+ },
+ "Explain the decline in CTR.": {
+  "focus": [
+   "ctr"
+  ],
+  "calls": [
+   {
+    "tool": "get_creative_fatigue",
+    "input": {},
+    "period": null,
+    "extra": null
+   },
+   {
+    "tool": "get_totals",
+    "input": {},
+    "period": null,
+    "extra": null
+   }
+  ]
+ },
+ "Explain what the monthly revenue trend means.": {
+  "focus": [
+   "revenue"
+  ],
+  "calls": [
+   {
+    "tool": "trend_over_time",
+    "input": {
+     "metric": "revenue"
+    },
+    "period": null,
+    "extra": null
+   },
+   {
+    "tool": "get_totals",
+    "input": {},
+    "period": null,
+    "extra": null
+   }
+  ]
+ },
+ "Why does TikTok have a higher ROAS than LinkedIn?": {
+  "focus": [
+   "roas"
+  ],
+  "calls": [
+   {
+    "tool": "rank_dimension",
+    "input": {
+     "dimension": "platform",
+     "metric": "roas",
+     "order": "desc",
+     "limit": 10
+    },
+    "period": null,
+    "extra": null
+   },
+   {
+    "tool": "get_totals",
+    "input": {},
+    "period": null,
+    "extra": null
+   }
+  ]
+ },
+ "Why do campaigns with spend over 10000 have lower ROAS?": {
+  "focus": [
+   "spend",
+   "roas"
+  ],
+  "calls": [
+   {
+    "tool": "filter_campaigns",
+    "input": {
+     "conditions": [
+      {
+       "field": "spend",
+       "operator": ">",
+       "value": 10000.0
+      }
+     ],
+     "sort_by": "spend",
+     "limit": 10,
+     "include_aggregates": true
+    },
+    "period": null,
+    "extra": null
+   },
+   {
+    "tool": "get_totals",
+    "input": {},
+    "period": null,
+    "extra": null
+   }
+  ]
+ },
+ "Give me a business interpretation of overall performance.": {
+  "focus": [],
+  "calls": [
+   {
+    "tool": "rank_dimension",
+    "input": {
+     "dimension": "platform",
+     "metric": "roas",
+     "order": "desc",
+     "limit": 10
+    },
+    "period": null,
+    "extra": null
+   },
+   {
+    "tool": "get_totals",
+    "input": {},
+    "period": null,
+    "extra": null
+   }
+  ]
+ },
+ "What insights can you draw about device performance?": {
+  "focus": [],
+  "calls": [
+   {
+    "tool": "rank_dimension",
+    "input": {
+     "dimension": "device",
+     "metric": "roas",
+     "order": "desc",
+     "limit": 10
+    },
+    "period": null,
+    "extra": null
+   },
+   {
+    "tool": "get_totals",
+    "input": {},
+    "period": null,
+    "extra": null
+   }
+  ]
+ },
+ "Explain how creative age affects CTR.": {
+  "focus": [
+   "ctr"
+  ],
+  "calls": [
+   {
+    "tool": "rank_dimension",
+    "input": {
+     "dimension": "age_group",
+     "metric": "ctr",
+     "order": "desc",
+     "limit": 10
+    },
+    "period": null,
+    "extra": null
+   },
+   {
+    "tool": "get_creative_fatigue",
+    "input": {},
+    "period": null,
+    "extra": null
+   },
+   {
+    "tool": "get_totals",
+    "input": {},
+    "period": null,
+    "extra": null
+   }
+  ]
+ },
+ "Why is CPA higher for some campaign objectives?": {
+  "focus": [
+   "cpa"
+  ],
+  "calls": [
+   {
+    "tool": "rank_dimension",
+    "input": {
+     "dimension": "objective",
+     "metric": "cpa",
+     "order": "desc",
+     "limit": 10
+    },
+    "period": null,
+    "extra": null
+   },
+   {
+    "tool": "get_totals",
+    "input": {},
+    "period": null,
+    "extra": null
+   }
+  ]
+ },
+ "Why did TikTok revenue change over time?": {
+  "focus": [
+   "revenue"
+  ],
+  "calls": [
+   {
+    "tool": "rank_dimension",
+    "input": {
+     "dimension": "platform",
+     "metric": "revenue",
+     "order": "desc",
+     "limit": 10
+    },
+    "period": null,
+    "extra": null
+   },
+   {
+    "tool": "trend_over_time",
+    "input": {
+     "metric": "revenue"
+    },
+    "period": null,
+    "extra": {
+     "platform": "TikTok"
+    }
+   },
+   {
+    "tool": "get_totals",
+    "input": {},
+    "period": null,
+    "extra": null
+   }
+  ]
+ }
+}

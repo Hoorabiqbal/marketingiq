@@ -204,13 +204,14 @@ def test_falls_back_to_pandas_when_duckdb_unavailable():
     _load("duckdb")
 
 
-def test_router_and_endpoint_use_duckdb():
-    import query_router as qr
+def test_executor_and_endpoint_use_duckdb():
+    import fake_llama  # noqa: F401  (before main: no real model is reachable from tests)
+    import analytics_executor as ax
     from fastapi.testclient import TestClient
     import main
     assert dt.data_backend_name() == "duckdb"
-    r = qr.route_query("Which platform has the highest ROAS?")
-    assert r["route"] == "DIRECT_DATABASE" and r["result"]["results"][0]["name"] == "TikTok"
+    r = ax.run("rank_dimension", {}, dimension="platform", metric="roas", limit=1)
+    assert r["results"][0]["name"] == "TikTok"
     health = TestClient(main.app).get("/api/health").json()
     assert health["campaigns_loaded"] == 10000 and health["data_backend"] == "duckdb"
 

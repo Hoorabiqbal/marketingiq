@@ -1,42 +1,57 @@
 """
-Tests for the grounding layer (grounding.py): the typed LLM context, the numerical-claim
-validator, the deterministic fallback, and how the LLM Adapter applies them to every provider.
-
-No real provider call is ever made: Groq runs on a fake transport (fake_groq.py), so these tests
-use no quota and need no real key. Historical bad answers come from benchmark_results/ (output
-recorded from Gemini, Qwen and Groq in Phases 6-7): the validator is provider-independent.
+Tests for the grounding layer (grounding.py): the typed context, the numerical-claim validator and the
+deterministic fallback, as a library for checking any generated text against DuckDB results. No model
+writes answer text in the running app any more (findings and recommendations are deterministic), so
+these tests exercise the validator directly. Contexts are built from the same data-tool calls the former
+explanation path made (recorded in grounding_contexts.json), executed on DuckDB. Historical bad answers
+come from benchmark_results/ (recorded from Gemini, Qwen and Groq in earlier phases): the validator is
+provider-independent.
 
 Run:  python test_grounding.py      (or: pytest test_grounding.py)
 """
 import json
 import logging
-import os
-import time
 from pathlib import Path
-from unittest.mock import patch
-
-import fake_groq  # noqa: F401  (first: fake GROQ_API_KEY before main.py reads .env)
-from fake_groq import FAKE_KEY
-
-from fastapi.testclient import TestClient
 
 import data_tools as dt
-import grounding
-import main
-import query_router as qr
-from llm_adapter import LLMAdapter, LLMProvider
 
-GUARD = fake_groq.block_real_calls(main.llm_adapter)  # nothing below reaches api.groq.com
-client = TestClient(main.app)
-BENCH = Path(__file__).parent / "benchmark_results"
+dt.load_data(str(Path(__file__).parent / ".." / "data" / "tech_advertising_campaigns_dataset.csv"))
+
+import analytics_executor as ax  # noqa: E402
+import grounding  # noqa: E402
+
+HERE = Path(__file__).parent
+BENCH = HERE / "benchmark_results"
+CONTEXT_CALLS = json.loads((HERE / "grounding_contexts.json").read_text(encoding="utf-8"))
 NNBSP = "\u202f"  # narrow no-break space, as Groq writes thousands separators
+MAX_LIST_ITEMS, MAX_CAMPAIGN_ROWS = 30, 10   # the caps the explanation context always had
+
+
+def _compact(value):
+    """Caps every list so a context can never grow with dataset size."""
+    if isinstance(value, dict):
+        out = {}
+        for k, v in value.items():
+            limit = MAX_CAMPAIGN_ROWS if k == "campaigns" else MAX_LIST_ITEMS
+            if isinstance(v, list) and len(v) > limit:
+                out[k] = [_compact(x) for x in v[:limit]]
+                out[f"{k}_truncated_from"] = len(v)
+            else:
+                out[k] = _compact(v)
+        return out
+    if isinstance(value, list):
+        return [_compact(x) for x in value]
+    return value
 
 
 def ctx(question, filters=None):
-    r = qr.route_query(question, filters or {})
-    assert r["route"] == "LLM_REQUIRED", r
-    return grounding.build_llm_context(question, {"filters_applied": r["filters_applied"],
-                                                  "focus_metrics": r["focus_metrics"], "results": r["analysis"]})
+    spec = CONTEXT_CALLS[question]
+    results = []
+    for c in spec["calls"]:
+        call = ax.ToolCall(c["tool"], c["input"], c["period"], c["extra"])
+        results.append({**call.describe(), "result": _compact(ax.execute(call, filters or {}))})
+    return grounding.build_llm_context(question, {"filters_applied": filters or {}, "focus_metrics": spec["focus"],
+                                                  "results": results})
 
 
 def check(text, context, question=""):
@@ -112,7 +127,7 @@ def test_filtered_subset_has_aggregates_and_labelled_examples():
     assert s["matched_campaign_count"] == s["aggregates"]["campaign_count"] == len(sub)
     assert s["aggregates"] == dt._metrics_from_rows(sub)
     ex = s["examples"]
-    assert ex["count"] == len(ex["campaigns"]) <= qr.MAX_LLM_CAMPAIGN_ROWS
+    assert ex["count"] == len(ex["campaigns"]) <= MAX_CAMPAIGN_ROWS
     assert "individual campaigns, not averages" in ex["selection"]
     assert "sorted by spend ascending" in ex["selection"]
     assert "aggregates" not in ex and "campaigns" not in s  # never one flat mixed structure
@@ -364,158 +379,15 @@ def test_safe_summary_is_itself_grounded():
 
 
 # ---------------------------------------------------------------------------
-# Adapter policy (provider-independent)
+# Context size: the typed context stays small
 # ---------------------------------------------------------------------------
 
-class Canned(LLMProvider):
-    name, model = "canned", "none"
-
-    def __init__(self, reply):
-        self.reply, self.calls = reply, 0
-
-    def generate_explanation(self, question, analysis, timeout_s):
-        self.calls += 1
-        return self.reply
-
-
-def explain(reply, question=OVERALL_Q):
-    provider = Canned(reply)
-    r = qr.route_query(question, {}, explainer=LLMAdapter(provider))
-    return r, provider
-
-
-def test_unsupported_answer_is_replaced_without_another_llm_call():
-    r, provider = explain("What the data shows: revenue was $211,005,852.77.")
-    assert provider.calls == 1  # no retry / regeneration loop
-    assert r["llm"]["status"] == "ok" and r["llm"]["grounding"]["action"] == "replaced_with_data_summary"
-    assert r["llm"]["grounding"]["passed"] is False and r["llm"]["grounding"]["issues"] == ["unsupported_value"]
-    assert "211,005,852.77" not in json.dumps(r)  # the unsupported answer is never exposed
-    assert r["explanation"] == grounding.safe_summary(grounding.build_llm_context(
-        OVERALL_Q, {"filters_applied": {}, "focus_metrics": r["focus_metrics"], "results": r["analysis"]}))
-
-
-def test_causal_policy():
-    hedged = "What the data shows: overall ROAS is 6.54.\nInterpretation: this may be driven by cheaper clicks."
-    r, _ = explain(hedged)
-    assert r["explanation"] == hedged and r["llm"]["grounding"]["action"] == "none"
-    unhedged = "What the data shows: overall ROAS is 6.54.\nInterpretation: cheaper clicks drive the higher ROAS."
-    r, _ = explain(unhedged)
-    assert r["llm"]["grounding"]["action"] == "caveat_added"
-    assert r["explanation"].startswith(unhedged) and r["explanation"].endswith(grounding.CAUSAL_CAVEAT)
-    # Numbers are checked first: an unsupported number replaces the answer whatever else it says.
-    r, _ = explain("ROAS is 6.54% because of TikTok.")
-    assert r["llm"]["grounding"]["action"] == "replaced_with_data_summary"
-
-
-def test_validator_error_never_exposes_an_unchecked_answer():
-    with patch.object(grounding, "validate_explanation", side_effect=RuntimeError("bug")):
-        r, _ = explain("Revenue was $1.")
-    assert r["llm"]["grounding"]["action"] == "replaced_with_data_summary" and "$1." not in r["explanation"]
-
-
-def test_grounding_log_is_sanitized():
-    records = []
-    handler = logging.Handler()
-    handler.emit = records.append
-    lg = logging.getLogger("marketingiq.llm_adapter")
-    level = lg.level
-    lg.addHandler(handler)
-    lg.setLevel(logging.INFO)
-    secret_question = "Why is overall performance SECRETQUESTION good?"
-    try:
-        qr.route_query(secret_question, {}, explainer=LLMAdapter(Canned("SECRETANSWER revenue was $999.99.")))
-    finally:
-        lg.removeHandler(handler)
-        lg.setLevel(level)
-    events = [json.loads(r.getMessage()) for r in records if '"grounding_check"' in r.getMessage()]
-    assert len(events) == 1
-    e = events[0]
-    assert e["provider"] == "canned" and e["passed"] is False and e["action"] == "replaced_with_data_summary"
-    assert e["issues"] == [{"category": "unsupported_value", "claim": "$999.99"}]
-    blob = json.dumps(e)
-    assert "SECRETQUESTION" not in blob and "SECRETANSWER" not in blob and FAKE_KEY not in blob
-
-
-# ---------------------------------------------------------------------------
-# Every Groq answer goes through the validator; DIRECT_DATABASE never does
-# ---------------------------------------------------------------------------
-
-def groq_adapter(text):
-    provider, fake = fake_groq.provider(fake_groq.reply(text))
-    return LLMAdapter(provider), fake
-
-
-def test_groq_responses_are_validated():
-    good = f"What the data shows: overall ROAS is {TOTALS['roas']:.2f}x."
-    adapter, fake = groq_adapter(good)
-    with patch.object(grounding, "validate_explanation", wraps=grounding.validate_explanation) as spy:
-        r = qr.route_query(OVERALL_Q, {}, explainer=adapter)
-    assert len(fake.requests) == 1 and spy.call_count == 1 and r["explanation"] == good
-    assert r["llm"]["provider"] == "groq" and r["llm"]["grounding"]["passed"] is True
-    adapter, fake = groq_adapter("ROAS is 6.54%.")  # a ratio written as a percentage
-    r = qr.route_query(OVERALL_Q, {}, explainer=adapter)
-    assert len(fake.requests) == 1 and r["llm"]["grounding"]["issues"] == ["unit_mismatch"]
-    assert "6.54%" not in r["explanation"]
-
-    tablet = entity(DEVICE, "Tablet")
-    adapter, fake = groq_adapter(f"Tablet CPA is ${tablet['cpa']}.")
-    r = qr.route_query(DEVICE_Q, {}, explainer=adapter)
-    assert len(fake.requests) == 1 and r["llm"]["grounding"]["passed"] is True
-    adapter, fake = groq_adapter(f"Tablet has a higher click-through rate ({tablet['cpa']}).")
-    r = qr.route_query(DEVICE_Q, {}, explainer=adapter)
-    assert len(fake.requests) == 1 and r["llm"]["grounding"]["issues"] == ["metric_label_mismatch"]
-    # The answer is validated against exactly the typed context Groq was given.
-    sent = fake.user_prompt()
-    assert '"metric_units"' in sent and '"analysis_scope"' in sent
-
-
-def test_direct_database_skips_llm_and_grounding():
-    with patch.object(grounding, "validate_explanation", side_effect=AssertionError("validator called")) as v, \
-            patch.object(grounding, "build_llm_context", side_effect=AssertionError("context built")) as b:
-        for q in ("What is total revenue?", "Which platform has the highest ROAS?", "Show monthly revenue.",
-                  "What is the average CTR?", "Compare TikTok and LinkedIn ROAS.",
-                  "Show campaigns with spend over 10000."):
-            body = client.post("/api/query", json={"query": q}).json()
-            assert body["route"] == "DIRECT_DATABASE" and "llm" not in body, (q, body)
-            chat = client.post("/api/chat", json={"messages": [{"role": "user", "content": q}], "filters": {}}).json()
-            assert chat["route"] == "DIRECT_DATABASE", (q, chat)
-    assert v.call_count == b.call_count == 0 and GUARD.requests == []
-    # Still millisecond-level: time the router alone (no HTTP), after warm-up.
-    qr.route_query("What is total revenue?")
-    started = time.perf_counter()
-    for _ in range(20):
-        qr.route_query("What is total revenue?")
-    assert (time.perf_counter() - started) / 20 < 0.05
-
-
-# ---------------------------------------------------------------------------
-# Context-size protection and no full dataset
-# ---------------------------------------------------------------------------
-
-def test_context_size_protection_still_works():
-    provider = Canned("ok")
-    r = qr.route_query(PLATFORM_Q, {}, explainer=LLMAdapter(provider, max_analysis_bytes=500))
-    assert r["llm"]["error"] == "analysis_too_large" and provider.calls == 0
-    assert r["llm"]["analysis_bytes"] > 500
-    big = {"results": [{"tool": "x", "result": {"rows": ["x" * 100] * 1000}}]}
-    assert LLMAdapter(provider).explain("Why?", big)["error"] == "analysis_too_large" and provider.calls == 0
+def test_context_size_stays_small():
     for q in (PLATFORM_Q, FILTER_Q, TREND_Q, FATIGUE_Q, OVERALL_Q):
         size = len(json.dumps(ctx(q), separators=(",", ":")).encode())
-        assert size < 4_000, (q, size)  # typed context stays small (limit is 16 KB)
-
-
-def test_no_full_dataset_reaches_providers():
-    provider = Canned("ok")
-    adapter = LLMAdapter(provider)
-    sent = []
-    provider.generate_explanation = lambda q, a, t: sent.append(a) or "ok"
-    r = qr.route_query("Why do campaigns with spend over 100 perform differently?", {}, explainer=adapter)
-    fs = next(s for s in sent[0]["sections"] if s["type"] == "filtered_subset")
-    assert fs["matched_campaign_count"] > 1000 and len(fs["examples"]["campaigns"]) <= qr.MAX_LLM_CAMPAIGN_ROWS
-    payload = json.dumps(sent[0])
-    assert payload.count('"id":') <= qr.MAX_LLM_CAMPAIGN_ROWS and len(payload) < os.path.getsize(main.CSV_PATH) / 100
-    df_block = {"results": [{"tool": "x", "result": {"rows": dt.get_dataframe()}}]}
-    assert adapter.explain("Why?", df_block)["error"] == "invalid_analysis"
+        assert size < 4_000, (q, size)
+    fs = next(s for s in FILTER["sections"] if s["type"] == "filtered_subset")
+    assert fs["matched_campaign_count"] > 1000 and len(fs["examples"]["campaigns"]) <= MAX_CAMPAIGN_ROWS
 
 
 # ---------------------------------------------------------------------------
@@ -571,8 +443,7 @@ def test_historical_bad_answers():
 
 
 if __name__ == "__main__":
-    for lg in (qr.logger, logging.getLogger("marketingiq.llm_adapter")):
-        lg.setLevel(logging.ERROR)
+    logging.getLogger("marketingiq.analytics").setLevel(logging.CRITICAL)
     tests = [(n, f) for n, f in list(globals().items()) if n.startswith("test_") and callable(f)]
     for name, fn in tests:
         fn()
